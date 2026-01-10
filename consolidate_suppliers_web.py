@@ -169,9 +169,21 @@ if st.button("🔄 統合実行", type="primary"):
                             return pd.read_csv(file, header=None, encoding=encoding)
                         except (UnicodeDecodeError, UnicodeError):
                             continue
-                    # If all encodings fail, try with errors='ignore'
+                    # If all encodings fail, read as bytes and decode manually
                     file.seek(0)
-                    return pd.read_csv(file, header=None, encoding='utf-8', errors='ignore')
+                    content = file.read()
+                    # Try to decode with error handling
+                    for encoding in ['utf-8', 'shift_jis', 'cp932']:
+                        try:
+                            decoded_content = content.decode(encoding, errors='ignore')
+                            from io import StringIO
+                            return pd.read_csv(StringIO(decoded_content), header=None)
+                        except:
+                            continue
+                    # Last resort: force UTF-8 with ignore
+                    decoded_content = content.decode('utf-8', errors='ignore')
+                    from io import StringIO
+                    return pd.read_csv(StringIO(decoded_content), header=None)
                 
                 df_maruei = read_csv_with_encoding(maruei_file)
                 df_hamamatsu = read_csv_with_encoding(hamamatsu_file)
