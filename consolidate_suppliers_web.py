@@ -218,6 +218,14 @@ if st.button("🔄 統合実行", type="primary"):
                 maruei_products = extract_maruei_products(df_maruei)
                 hamamatsu_products = extract_hamamatsu_products(df_hamamatsu)
                 
+                # Debug info
+                if len(maruei_products) == 0:
+                    st.warning("⚠️ マルエイのデータが抽出されませんでした。CSVファイルの形式を確認してください。")
+                    st.info(f"マルエイ CSV shape: {df_maruei.shape}")
+                if len(hamamatsu_products) == 0:
+                    st.warning("⚠️ 浜松ベジタブルのデータが抽出されませんでした。CSVファイルの形式を確認してください。")
+                    st.info(f"浜松ベジタブル CSV shape: {df_hamamatsu.shape}")
+                
                 # Combine
                 all_products = maruei_products + hamamatsu_products
                 df_consolidated = pd.DataFrame(all_products)
