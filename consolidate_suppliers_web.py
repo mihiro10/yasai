@@ -168,34 +168,22 @@ if st.button("🔄 統合実行", type="primary"):
         try:
             with st.spinner("データを処理中..."):
                 # Read CSV files with multiple encoding support
+                # Streamlit file objects need to be read as bytes first
                 def read_csv_with_encoding(file, encodings=['utf-8', 'utf-8-sig', 'shift_jis', 'cp932', 'euc-jp']):
-                    for encoding in encodings:
-                        try:
-                            file.seek(0)  # Reset file pointer
-                            # Try with comma separator first
-                            try:
-                                return pd.read_csv(file, header=None, encoding=encoding, sep=',', on_bad_lines='skip', engine='python')
-                            except:
-                                # If that fails, try without specifying separator (auto-detect)
-                                file.seek(0)
-                                return pd.read_csv(file, header=None, encoding=encoding, on_bad_lines='skip', engine='python')
-                        except (UnicodeDecodeError, UnicodeError):
-                            continue
-                        except Exception as e:
-                            # Try next encoding if CSV parsing fails
-                            continue
-                    # If all encodings fail, read as bytes and decode manually
+                    # Read file content as bytes
                     file.seek(0)
                     content = file.read()
-                    # Try to decode with error handling
-                    for encoding in ['utf-8', 'shift_jis', 'cp932']:
+                    
+                    # If content is already a string, convert to bytes
+                    if isinstance(content, str):
+                        content = content.encode('utf-8')
+                    
+                    # Try each encoding
+                    for encoding in encodings:
                         try:
-                            if isinstance(content, bytes):
-                                decoded_content = content.decode(encoding, errors='ignore')
-                            else:
-                                decoded_content = content
+                            decoded_content = content.decode(encoding, errors='ignore')
                             from io import StringIO
-                            # Try with comma separator
+                            # Try with comma separator first
                             try:
                                 return pd.read_csv(StringIO(decoded_content), header=None, sep=',', on_bad_lines='skip', engine='python')
                             except:
@@ -203,11 +191,9 @@ if st.button("🔄 統合実行", type="primary"):
                                 return pd.read_csv(StringIO(decoded_content), header=None, on_bad_lines='skip', engine='python')
                         except Exception:
                             continue
+                    
                     # Last resort: force UTF-8 with ignore
-                    if isinstance(content, bytes):
-                        decoded_content = content.decode('utf-8', errors='ignore')
-                    else:
-                        decoded_content = content
+                    decoded_content = content.decode('utf-8', errors='ignore')
                     from io import StringIO
                     return pd.read_csv(StringIO(decoded_content), header=None, on_bad_lines='skip', engine='python')
                 
