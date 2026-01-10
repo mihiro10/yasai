@@ -161,9 +161,20 @@ if st.button("🔄 統合実行", type="primary"):
     if maruei_file and hamamatsu_file:
         try:
             with st.spinner("データを処理中..."):
-                # Read CSV files
-                df_maruei = pd.read_csv(maruei_file, header=None, encoding='utf-8')
-                df_hamamatsu = pd.read_csv(hamamatsu_file, header=None, encoding='utf-8')
+                # Read CSV files with multiple encoding support
+                def read_csv_with_encoding(file, encodings=['utf-8', 'utf-8-sig', 'shift_jis', 'cp932', 'euc-jp']):
+                    for encoding in encodings:
+                        try:
+                            file.seek(0)  # Reset file pointer
+                            return pd.read_csv(file, header=None, encoding=encoding)
+                        except (UnicodeDecodeError, UnicodeError):
+                            continue
+                    # If all encodings fail, try with errors='ignore'
+                    file.seek(0)
+                    return pd.read_csv(file, header=None, encoding='utf-8', errors='ignore')
+                
+                df_maruei = read_csv_with_encoding(maruei_file)
+                df_hamamatsu = read_csv_with_encoding(hamamatsu_file)
                 
                 # Extract products
                 maruei_products = extract_maruei_products(df_maruei)
