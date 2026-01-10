@@ -126,9 +126,15 @@ def extract_maruei_products(df):
                 continue
             
             origin = str(row.iloc[2]).strip() if len(row) > 2 and pd.notna(row.iloc[2]) else ''
+            
+            # Try multiple columns for price (12, 13, 14)
             kg_price = None
-            if len(row) > 12 and pd.notna(row.iloc[12]):
-                kg_price = parse_kg_price(row.iloc[12])
+            for col_idx in [12, 13, 14]:
+                if len(row) > col_idx and pd.notna(row.iloc[col_idx]):
+                    price_val = row.iloc[col_idx]
+                    kg_price = parse_kg_price(price_val)
+                    if kg_price is not None:
+                        break
             
             if kg_price is not None:
                 products.append({
