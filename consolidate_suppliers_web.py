@@ -166,8 +166,17 @@ if st.button("🔄 統合実行", type="primary"):
                     for encoding in encodings:
                         try:
                             file.seek(0)  # Reset file pointer
-                            return pd.read_csv(file, header=None, encoding=encoding)
+                            # Try with comma separator first
+                            try:
+                                return pd.read_csv(file, header=None, encoding=encoding, sep=',', on_bad_lines='skip', engine='python')
+                            except:
+                                # If that fails, try without specifying separator (auto-detect)
+                                file.seek(0)
+                                return pd.read_csv(file, header=None, encoding=encoding, on_bad_lines='skip', engine='python')
                         except (UnicodeDecodeError, UnicodeError):
+                            continue
+                        except Exception as e:
+                            # Try next encoding if CSV parsing fails
                             continue
                     # If all encodings fail, read as bytes and decode manually
                     file.seek(0)
@@ -175,15 +184,26 @@ if st.button("🔄 統合実行", type="primary"):
                     # Try to decode with error handling
                     for encoding in ['utf-8', 'shift_jis', 'cp932']:
                         try:
-                            decoded_content = content.decode(encoding, errors='ignore')
+                            if isinstance(content, bytes):
+                                decoded_content = content.decode(encoding, errors='ignore')
+                            else:
+                                decoded_content = content
                             from io import StringIO
-                            return pd.read_csv(StringIO(decoded_content), header=None)
-                        except:
+                            # Try with comma separator
+                            try:
+                                return pd.read_csv(StringIO(decoded_content), header=None, sep=',', on_bad_lines='skip', engine='python')
+                            except:
+                                # Try auto-detect separator
+                                return pd.read_csv(StringIO(decoded_content), header=None, on_bad_lines='skip', engine='python')
+                        except Exception:
                             continue
                     # Last resort: force UTF-8 with ignore
-                    decoded_content = content.decode('utf-8', errors='ignore')
+                    if isinstance(content, bytes):
+                        decoded_content = content.decode('utf-8', errors='ignore')
+                    else:
+                        decoded_content = content
                     from io import StringIO
-                    return pd.read_csv(StringIO(decoded_content), header=None)
+                    return pd.read_csv(StringIO(decoded_content), header=None, on_bad_lines='skip', engine='python')
                 
                 df_maruei = read_csv_with_encoding(maruei_file)
                 df_hamamatsu = read_csv_with_encoding(hamamatsu_file)
