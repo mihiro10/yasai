@@ -16,23 +16,56 @@ st.markdown("取引先のCSVファイルを統合して、分析用のファイ�
 
 def extract_date_from_header(df, supplier_name):
     """Extract Monday date from the date range in CSV header"""
+    current_year = datetime.now().year
+    
     for i in range(min(5, len(df))):
         row_str = ' '.join([str(x) for x in df.iloc[i].values if pd.notna(x)])
+        
+        # Try to find year in the date string (e.g., "2025/12/19" or "12/19/2025")
+        year_match = re.search(r'(\d{4})', row_str)
+        if year_match:
+            year = int(year_match.group(1))
+        else:
+            year = current_year
+        
+        # Find date pattern (MM/DD or M/D)
         date_match = re.search(r'(\d{1,2})/(\d{1,2})', row_str)
         if date_match:
             month = int(date_match.group(1))
             day = int(date_match.group(2))
+            
+            # If month is > current month, it might be from previous year
+            # If month is 1-3 and current month is 10-12, it might be next year
+            current_month = datetime.now().month
+            if month <= 3 and current_month >= 10:
+                # Likely next year (e.g., January 2026 when it's December 2025)
+                year = current_year + 1
+            elif month >= 10 and current_month <= 3:
+                # Likely previous year (e.g., December 2024 when it's January 2025)
+                year = current_year - 1
+            
             try:
-                date_obj = datetime(2025, month, day)
-                weekday = date_obj.weekday()
+                date_obj = datetime(year, month, day)
+                weekday = date_obj.weekday()  # 0=Monday, 6=Sunday
                 if weekday == 0:
                     monday_date = date_obj
                 else:
                     days_until_next_monday = 7 - weekday
                     monday_date = date_obj + timedelta(days=days_until_next_monday)
                 return f"{monday_date.year}/{monday_date.month:02d}/{monday_date.day:02d}"
-            except:
-                return f"2025/{month:02d}/{day:02d}"
+            except ValueError:
+                # Invalid date (e.g., Feb 30), try with current year
+                try:
+                    date_obj = datetime(current_year, month, day)
+                    weekday = date_obj.weekday()
+                    if weekday == 0:
+                        monday_date = date_obj
+                    else:
+                        days_until_next_monday = 7 - weekday
+                        monday_date = date_obj + timedelta(days=days_until_next_monday)
+                    return f"{monday_date.year}/{monday_date.month:02d}/{monday_date.day:02d}"
+                except:
+                    return f"{current_year}/{month:02d}/{day:02d}"
     return None
 
 def parse_kg_price(price_str):
