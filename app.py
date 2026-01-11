@@ -313,24 +313,47 @@ def extract_vendor_and_date_from_filename(filename):
     return vendor, date_str, error_msg
 
 def parse_kg_price(price_str):
-    """Parse kg price from various formats"""
-    if pd.isna(price_str) or price_str == '' or price_str == '×' or str(price_str).startswith('#'):
-        return None
+    """
+    Parse kg price from various formats
+    Returns: (price_value, error_message)
+    - price_value: float if valid, None if invalid
+    - error_message: None if valid, error message if invalid
+    """
+    original_str = str(price_str) if pd.notna(price_str) else ''
+    
+    if pd.isna(price_str) or price_str == '':
+        return None, None  # Empty is not an error, just skip
+    
     price_str = str(price_str).strip()
-    if 'PK' in price_str or '円' in price_str:
+    
+    # Check for explicit error indicators
+    if price_str == '×' or str(price_str).startswith('#'):
+        return None, f"無効な価格値: '{original_str}'"
+    
+    # Check for non-numeric characters (excluding allowed ones)
+    # Allowed: digits, comma, period, PK, 円
+    allowed_pattern = r'[\d,.\sPK円@]'
+    if not re.match(r'^[\d,.\sPK円@]+$', price_str.replace(',', '').replace(' ', '')):
+        # Has invalid characters
+        return None, f"価格に無効な文字が含まれています: '{original_str}'"
+    
+    # Try to extract number
+    if 'PK' in price_str or '円' in price_str or '@' in price_str:
         numbers = re.findall(r'[\d,]+\.?\d*', price_str.replace(',', ''))
         if numbers:
             try:
-                return float(numbers[0])
+                return float(numbers[0]), None
             except:
-                pass
+                return None, f"価格の解析に失敗しました: '{original_str}'"
+    
     cleaned = re.sub(r'[^\d.]', '', price_str.replace(',', ''))
     if cleaned:
         try:
-            return float(cleaned)
+            return float(cleaned), None
         except:
-            pass
-    return None
+            return None, f"価格の変換に失敗しました: '{original_str}'"
+    
+    return None, f"価格が抽出できませんでした: '{original_str}'"
 
 def extract_maruei_products(df, week):
     """Extract products from マルエイ"""
@@ -342,9 +365,10 @@ def extract_maruei_products(df, week):
             break
     
     if header_row is None:
-        return []
+        return [], []
     
     products = []
+    price_errors = []
     supplier = 'マルエイ'
     
     for i in range(header_row + 2, len(df)):
@@ -356,12 +380,17 @@ def extract_maruei_products(df, week):
             
             origin = str(row.iloc[2]).strip() if len(row) > 2 and pd.notna(row.iloc[2]) else ''
             kg_price = None
+            price_error = None
+            
             for col_idx in [12, 13, 14]:
                 if len(row) > col_idx and pd.notna(row.iloc[col_idx]):
                     price_val = row.iloc[col_idx]
-                    kg_price = parse_kg_price(price_val)
+                    kg_price, price_error = parse_kg_price(price_val)
                     if kg_price is not None:
                         break
+                    elif price_error is not None:
+                        # Store error but continue checking other columns
+                        pass
             
             if kg_price is not None:
                 unified_name = get_unified_name(product_name, UNIFIED_NAME_MAPPING)
@@ -373,8 +402,16 @@ def extract_maruei_products(df, week):
                     'kg単価': kg_price,
                     'その週': week
                 })
+            elif price_error is not None:
+                # Record error for this product
+                price_errors.append({
+                    '品名': product_name,
+                    '産地': origin,
+                    'エラー': price_error,
+                    '行番号': i + 1
+                })
     
-    return products
+    return products, price_errors
 
 def extract_hamamatsu_products(df, week):
     """Extract products from 浜松ベジタブル"""
@@ -386,9 +423,10 @@ def extract_hamamatsu_products(df, week):
             break
     
     if header_row is None:
-        return []
+        return [], []
     
     products = []
+    price_errors = []
     supplier = '浜松ベジタブル'
     
     for i in range(header_row + 1, len(df)):
@@ -402,8 +440,10 @@ def extract_hamamatsu_products(df, week):
             
             origin = str(row.iloc[1]).strip() if pd.notna(row.iloc[1]) else ''
             kg_price = None
+            price_error = None
+            
             if len(row) > 6 and pd.notna(row.iloc[6]):
-                kg_price = parse_kg_price(row.iloc[6])
+                kg_price, price_error = parse_kg_price(row.iloc[6])
             
             if kg_price is not None:
                 unified_name = get_unified_name(product_name, UNIFIED_NAME_MAPPING)
@@ -415,12 +455,20 @@ def extract_hamamatsu_products(df, week):
                     'kg単価': kg_price,
                     'その週': week
                 })
+            elif price_error is not None:
+                price_errors.append({
+                    '品名': product_name,
+                    '産地': origin,
+                    'エラー': price_error,
+                    '行番号': i + 1
+                })
     
-    return products
+    return products, price_errors
 
 def extract_aguri_products(df, week):
     """Extract products from アグリ"""
     products = []
+    price_errors = []
     supplier = 'アグリ'
     
     for i in range(3, len(df)):
@@ -431,8 +479,10 @@ def extract_aguri_products(df, week):
                 if product_name and product_name != 'nan' and '商品' not in product_name:
                     origin = str(df.iloc[i, 3]).strip() if len(df.columns) > 3 and pd.notna(df.iloc[i, 3]) else ''
                     kg_price = None
+                    price_error = None
+                    
                     if len(df.columns) > 6 and pd.notna(df.iloc[i, 6]):
-                        kg_price = parse_kg_price(df.iloc[i, 6])
+                        kg_price, price_error = parse_kg_price(df.iloc[i, 6])
                     
                     if kg_price is not None:
                         unified_name = get_unified_name(product_name, UNIFIED_NAME_MAPPING)
@@ -444,8 +494,15 @@ def extract_aguri_products(df, week):
                             'kg単価': kg_price,
                             'その週': week
                         })
+                    elif price_error is not None:
+                        price_errors.append({
+                            '品名': product_name,
+                            '産地': origin,
+                            'エラー': price_error,
+                            '行番号': i + 1
+                        })
     
-    return products
+    return products, price_errors
 
 def extract_date_from_aguri_header(df):
     """Extract date from アグリ CSV header"""
