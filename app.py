@@ -279,14 +279,19 @@ def extract_vendor_and_date_from_filename(filename):
             elif vendor_part_bytes == v_bytes:
                 vendor = v
                 break
-            # Check if vendor name is in the filename part
+            # Check if vendor name is in the filename part (substring match)
             elif v_normalized in vendor_part_normalized:
                 vendor = v
                 break
-            # Check if filename part is in vendor name
+            # Check if filename part is in vendor name (reverse substring)
             elif vendor_part_normalized in v_normalized:
                 vendor = v
                 break
+            # Check for common prefix (浜松 for 浜松ベジタブル)
+            elif len(v_normalized) >= 2 and len(vendor_part_normalized) >= 2:
+                if v_normalized[:2] == vendor_part_normalized[:2] and v_normalized[:2] == '浜松':
+                    vendor = v
+                    break
     
     date_str = None
     error_msg = None
