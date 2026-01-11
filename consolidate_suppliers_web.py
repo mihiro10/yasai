@@ -39,15 +39,29 @@ def extract_vendor_and_date_from_filename(filename):
     vendor_part = parts[0].strip()
     date_part = parts[1]
     
-    # Try to find vendor name - check for exact match first, then substring match
+    # Try to find vendor name - normalize and match
     vendor = None
+    
+    # Normalize vendor part (remove any extra whitespace, normalize unicode)
+    vendor_part_normalized = vendor_part.strip()
+    
     # First try exact match
-    if vendor_part in SUPPORTED_VENDORS:
-        vendor = vendor_part
+    if vendor_part_normalized in SUPPORTED_VENDORS:
+        vendor = vendor_part_normalized
     else:
-        # Then try substring match
+        # Try case-insensitive and normalized matching
         for v in SUPPORTED_VENDORS:
-            if v in vendor_part or vendor_part in v:
+            v_normalized = v.strip()
+            # Exact match after normalization
+            if v_normalized == vendor_part_normalized:
+                vendor = v
+                break
+            # Substring match
+            elif v_normalized in vendor_part_normalized or vendor_part_normalized in v_normalized:
+                vendor = v
+                break
+            # Also try with different unicode normalization
+            elif v_normalized.replace(' ', '') == vendor_part_normalized.replace(' ', ''):
                 vendor = v
                 break
     
