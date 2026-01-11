@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Web-based version of consolidate_suppliers using Streamlit.
-User can upload CSV files through browser and download consolidated file.
+Web-based vegetable price consolidator - Version 2
+Based on flowchart: Excel file → Extract from filename → Process 4 vendors → Copy-paste format
 """
 import streamlit as st
 import pandas as pd
@@ -12,41 +12,90 @@ import io
 st.set_page_config(page_title="野菜価格統合ツール", layout="wide")
 
 st.title("🥬 野菜価格統合ツール")
-st.markdown("取引先のCSVファイルを統合して、分析用のファイルを作成します。")
+st.markdown("Excelファイルをアップロードして、データを自動で整理します。")
 
-def extract_date_from_header(df, supplier_name):
+# Supported vendors (4 vendors)
+SUPPORTED_VENDORS = ['マルエイ', '浜松ベジタブル', 'おやさい', 'アグリ']
+
+def extract_vendor_and_date_from_filename(filename):
+    """
+    Extract vendor name and date from filename.
+    Format must be: vendor_YYYY-MM-DD.xlsx (underscore required)
+    Date must be a Monday.
+    Returns: (vendor, date_str, error_message)
+    """
+    # Remove extension
+    name_without_ext = filename.rsplit('.', 1)[0]
+    
+    # Check for underscore
+    if '_' not in name_without_ext:
+        return None, None, f"❌ エラー: ファイル名にアンダースコア（_）が含まれていません。\n現在のファイル名: {filename}\n正しい形式: `取引先名_YYYY_MM_DD.csv`\n例: `マルエイ_2025_12_22.csv`"
+    
+    # Split by underscore
+    parts = name_without_ext.split('_', 1)
+    if len(parts) < 2:
+        return None, None, f"❌ エラー: ファイル名の形式が正しくありません。\n現在のファイル名: {filename}\n正しい形式: `取引先名_YYYY_MM_DD.csv`\n例: `マルエイ_2025_12_22.csv`"
+    
+    vendor_part = parts[0]
+    date_part = parts[1]
+    
+    # Try to find vendor name
+    vendor = None
+    for v in SUPPORTED_VENDORS:
+        if v in vendor_part:
+            vendor = v
+            break
+    
+    # Try to find date - ONLY accept YYYY_MM_DD format (underscore separated)
+    date_str = None
+    error_msg = None
+    
+    # Try YYYY_MM_DD format (underscore separated)
+    date_match = re.search(r'(\d{4})_(\d{1,2})_(\d{1,2})', date_part)
+    if date_match:
+        year, month, day = int(date_match.group(1)), int(date_match.group(2)), int(date_match.group(3))
+        try:
+            date_obj = datetime(year, month, day)
+            # Check if it's a Monday (weekday() returns 0 for Monday)
+            if date_obj.weekday() != 0:
+                error_msg = f"❌ エラー: ファイル名の日付は月曜日である必要があります。\n指定された日付: {year}/{month:02d}/{day:02d} ({['月', '火', '水', '木', '金', '土', '日'][date_obj.weekday()]}曜日)\n正しい形式の例: {vendor or '取引先名'}_2025_12_22.csv (月曜日)"
+            else:
+                date_str = f"{year}/{month:02d}/{day:02d}"
+        except ValueError as e:
+            error_msg = f"❌ エラー: 無効な日付です。\n指定された日付: {year}/{month:02d}/{day:02d}\n正しい形式の例: {vendor or '取引先名'}_2025_12_22.csv (YYYY_MM_DD形式、月曜日)"
+    else:
+        # No date found or wrong format
+        error_msg = f"❌ エラー: ファイル名に日付が含まれていません、または形式が正しくありません。\n現在のファイル名: {filename}\nアンダースコア以降: {date_part}\n正しい形式の例: {vendor or '取引先名'}_2025_12_22.csv (YYYY_MM_DD形式、月曜日)"
+    
+    return vendor, date_str, error_msg
+
+def extract_date_from_header(df, default_date):
     """Extract Monday date from the date range in CSV header"""
     current_year = datetime.now().year
     
     for i in range(min(5, len(df))):
         row_str = ' '.join([str(x) for x in df.iloc[i].values if pd.notna(x)])
         
-        # Try to find year in the date string (e.g., "2025/12/19" or "12/19/2025")
         year_match = re.search(r'(\d{4})', row_str)
         if year_match:
             year = int(year_match.group(1))
         else:
             year = current_year
         
-        # Find date pattern (MM/DD or M/D)
         date_match = re.search(r'(\d{1,2})/(\d{1,2})', row_str)
         if date_match:
             month = int(date_match.group(1))
             day = int(date_match.group(2))
             
-            # If month is > current month, it might be from previous year
-            # If month is 1-3 and current month is 10-12, it might be next year
             current_month = datetime.now().month
             if month <= 3 and current_month >= 10:
-                # Likely next year (e.g., January 2026 when it's December 2025)
                 year = current_year + 1
             elif month >= 10 and current_month <= 3:
-                # Likely previous year (e.g., December 2024 when it's January 2025)
                 year = current_year - 1
             
             try:
                 date_obj = datetime(year, month, day)
-                weekday = date_obj.weekday()  # 0=Monday, 6=Sunday
+                weekday = date_obj.weekday()
                 if weekday == 0:
                     monday_date = date_obj
                 else:
@@ -54,7 +103,6 @@ def extract_date_from_header(df, supplier_name):
                     monday_date = date_obj + timedelta(days=days_until_next_monday)
                 return f"{monday_date.year}/{monday_date.month:02d}/{monday_date.day:02d}"
             except ValueError:
-                # Invalid date (e.g., Feb 30), try with current year
                 try:
                     date_obj = datetime(current_year, month, day)
                     weekday = date_obj.weekday()
@@ -65,8 +113,8 @@ def extract_date_from_header(df, supplier_name):
                         monday_date = date_obj + timedelta(days=days_until_next_monday)
                     return f"{monday_date.year}/{monday_date.month:02d}/{monday_date.day:02d}"
                 except:
-                    return f"{current_year}/{month:02d}/{day:02d}"
-    return None
+                    return default_date
+    return default_date
 
 def parse_kg_price(price_str):
     """Parse kg price from various formats"""
@@ -88,12 +136,8 @@ def parse_kg_price(price_str):
             pass
     return None
 
-def extract_hamamatsu_products(df):
-    """Extract products from 浜松ベジタブル単価表.csv"""
-    week = extract_date_from_header(df, '浜松ベジタブル')
-    if not week:
-        week = '12/22～1/11'
-    
+def extract_hamamatsu_products(df, week):
+    """Extract products from 浜松ベジタブル"""
     header_row = None
     for i in range(len(df)):
         row_str = ' '.join([str(x) for x in df.iloc[i].values if pd.notna(x)])
@@ -132,12 +176,8 @@ def extract_hamamatsu_products(df):
     
     return products
 
-def extract_maruei_products(df):
-    """Extract products from マルエイ市況.csv"""
-    week = extract_date_from_header(df, 'マルエイ')
-    if not week:
-        week = '12/19(金)～12/25(木)'
-    
+def extract_maruei_products(df, week):
+    """Extract products from マルエイ"""
     header_row = None
     for i in range(len(df)):
         row_str = ' '.join([str(x) for x in df.iloc[i].values if pd.notna(x)])
@@ -159,8 +199,6 @@ def extract_maruei_products(df):
                 continue
             
             origin = str(row.iloc[2]).strip() if len(row) > 2 and pd.notna(row.iloc[2]) else ''
-            
-            # Try multiple columns for price (12, 13, 14)
             kg_price = None
             for col_idx in [12, 13, 14]:
                 if len(row) > col_idx and pd.notna(row.iloc[col_idx]):
@@ -180,28 +218,48 @@ def extract_maruei_products(df):
     
     return products
 
-# File upload section
-st.header("📁 ファイルアップロード")
+# File upload
+st.header("📁 CSVファイルアップロード")
 
-col1, col2 = st.columns(2)
+st.info("💡 **一度に1つのファイルをアップロードしてください。**\n\n対応取引先: " + ", ".join(SUPPORTED_VENDORS))
 
-with col1:
-    maruei_file = st.file_uploader("マルエイ市況.csv", type=['csv'], key='maruei')
-    if maruei_file:
-        st.success(f"✓ {maruei_file.name} アップロード済み")
+uploaded_file = st.file_uploader(
+    "CSVファイルをアップロード（1ファイルのみ）", 
+    type=['csv'],
+    help="ファイル名形式: 取引先名_YYYY_MM_DD.csv (例: マルエイ_2025_12_22.csv)"
+)
 
-with col2:
-    hamamatsu_file = st.file_uploader("浜松ベジタブル単価表.csv", type=['csv'], key='hamamatsu')
-    if hamamatsu_file:
-        st.success(f"✓ {hamamatsu_file.name} アップロード済み")
-
-# Process button
-if st.button("🔄 統合実行", type="primary"):
-    if maruei_file and hamamatsu_file:
+if uploaded_file:
+    # Extract vendor and date from filename
+    vendor, date_from_filename, date_error = extract_vendor_and_date_from_filename(uploaded_file.name)
+    
+    st.info(f"📄 ファイル名: {uploaded_file.name}")
+    
+    # Check for vendor
+    if not vendor:
+        st.error(f"❌ サポートされていない取引先です。")
+        st.info(f"**対応取引先:** {', '.join(SUPPORTED_VENDORS)}")
+        st.info(f"**ファイル名の形式:** `取引先名_YYYY_MM_DD.csv` (例: `マルエイ_2025_12_22.csv`)")
+        st.info(f"**重要:** 日付は月曜日である必要があります。")
+        st.stop()
+    
+    # Check for date error
+    if date_error:
+        st.error(date_error)
+        st.stop()
+    
+    if date_from_filename:
+        st.success(f"✓ 取引先: {vendor}")
+        st.success(f"✓ 日付: {date_from_filename} (月曜日 ✓)")
+    else:
+        st.error("❌ 日付の抽出に失敗しました。")
+        st.stop()
+    
+    # Process button
+    if st.button("🔄 データを整理", type="primary"):
         try:
             with st.spinner("データを処理中..."):
-                # Read CSV files with multiple encoding support
-                # Streamlit file objects need to be read as bytes first
+                # Read CSV file with encoding support
                 def read_csv_with_encoding(file, encodings=['utf-8', 'utf-8-sig', 'shift_jis', 'cp932', 'euc-jp']):
                     # Read file content as bytes
                     file.seek(0)
@@ -216,12 +274,7 @@ if st.button("🔄 統合実行", type="primary"):
                         try:
                             decoded_content = content.decode(encoding, errors='ignore')
                             from io import StringIO
-                            # Try with comma separator first
-                            try:
-                                return pd.read_csv(StringIO(decoded_content), header=None, sep=',', on_bad_lines='skip', engine='python')
-                            except:
-                                # Try auto-detect separator
-                                return pd.read_csv(StringIO(decoded_content), header=None, on_bad_lines='skip', engine='python')
+                            return pd.read_csv(StringIO(decoded_content), header=None, on_bad_lines='skip', engine='python')
                         except Exception:
                             continue
                     
@@ -230,81 +283,114 @@ if st.button("🔄 統合実行", type="primary"):
                     from io import StringIO
                     return pd.read_csv(StringIO(decoded_content), header=None, on_bad_lines='skip', engine='python')
                 
-                df_maruei = read_csv_with_encoding(maruei_file)
-                df_hamamatsu = read_csv_with_encoding(hamamatsu_file)
+                df = read_csv_with_encoding(uploaded_file)
                 
-                # Extract products
-                maruei_products = extract_maruei_products(df_maruei)
-                hamamatsu_products = extract_hamamatsu_products(df_hamamatsu)
+                # Use date from filename (already validated as Monday)
+                week = date_from_filename
                 
-                # Debug info
-                if len(maruei_products) == 0:
-                    st.warning("⚠️ マルエイのデータが抽出されませんでした。CSVファイルの形式を確認してください。")
-                    st.info(f"マルエイ CSV shape: {df_maruei.shape}")
-                if len(hamamatsu_products) == 0:
-                    st.warning("⚠️ 浜松ベジタブルのデータが抽出されませんでした。CSVファイルの形式を確認してください。")
-                    st.info(f"浜松ベジタブル CSV shape: {df_hamamatsu.shape}")
+                # Extract products based on vendor
+                products = []
+                if vendor == 'マルエイ':
+                    products = extract_maruei_products(df, week)
+                elif vendor == '浜松ベジタブル':
+                    products = extract_hamamatsu_products(df, week)
+                elif vendor in ['おやさい', 'アグリ']:
+                    # TODO: Implement extraction for おやさい and アグリ
+                    st.warning(f"⚠️ {vendor}の抽出ロジックはまだ実装されていません。")
+                    products = []
                 
-                # Combine
-                all_products = maruei_products + hamamatsu_products
-                df_consolidated = pd.DataFrame(all_products)
-                df_consolidated = df_consolidated[['品名', '取引先', '産地', 'kg単価', 'その週']]
-                df_consolidated = df_consolidated.sort_values(['その週', '品名', '取引先'])
-                
-                st.success(f"✓ 統合完了！ {len(df_consolidated)}件のデータ")
-                
-                # Display summary
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("総データ数", len(df_consolidated))
-                with col2:
-                    st.metric("取引先数", df_consolidated['取引先'].nunique())
-                with col3:
-                    st.metric("商品数", df_consolidated['品名'].nunique())
-                
-                # Show preview
-                st.subheader("📊 プレビュー（最初の20行）")
-                st.dataframe(df_consolidated.head(20), use_container_width=True)
-                
-                # Download buttons
-                st.subheader("💾 ダウンロード")
-                
-                # CSV download
-                csv_buffer = io.StringIO()
-                df_consolidated.to_csv(csv_buffer, index=False, encoding='utf-8-sig')
-                st.download_button(
-                    label="📄 CSV形式でダウンロード",
-                    data=csv_buffer.getvalue(),
-                    file_name="統合_野菜価格.csv",
-                    mime="text/csv"
-                )
-                
-                # Excel download
-                excel_buffer = io.BytesIO()
-                with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-                    df_consolidated.to_excel(writer, index=False, sheet_name='統合データ')
-                st.download_button(
-                    label="📊 Excel形式でダウンロード",
-                    data=excel_buffer.getvalue(),
-                    file_name="統合_野菜価格.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-                
+                if len(products) == 0:
+                    st.error("❌ データが抽出されませんでした。ファイルの形式を確認してください。")
+                else:
+                    # Create DataFrame
+                    df_consolidated = pd.DataFrame(products)
+                    df_consolidated = df_consolidated[['品名', '取引先', '産地', 'kg単価', 'その週']]
+                    df_consolidated = df_consolidated.sort_values(['その週', '品名', '取引先'])
+                    
+                    st.success(f"✓ データ整理完了！ {len(df_consolidated)}件のデータ")
+                    
+                    # Display summary
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("データ数", len(df_consolidated))
+                    with col2:
+                        st.metric("取引先", vendor)
+                    with col3:
+                        st.metric("週", week)
+                    
+                    # Copy-paste friendly format (tab-separated for Google Sheets)
+                    st.subheader("📋 コピー&ペースト用データ")
+                    st.markdown("以下のデータをコピーして、Google Sheetsに貼り付けてください。")
+                    
+                    # Create tab-separated text
+                    output_text = df_consolidated.to_csv(sep='\t', index=False, encoding='utf-8-sig')
+                    
+                    # Display in text area for easy copying
+                    st.text_area(
+                        "コピー用データ（タブ区切り）",
+                        output_text,
+                        height=300,
+                        help="このデータをコピーしてGoogle Sheetsに貼り付けてください"
+                    )
+                    
+                    # Also show as table
+                    st.subheader("📊 データプレビュー")
+                    st.dataframe(df_consolidated, use_container_width=True)
+                    
+                    # Download buttons
+                    st.subheader("💾 ダウンロード")
+                    
+                    # CSV download
+                    csv_buffer = io.StringIO()
+                    df_consolidated.to_csv(csv_buffer, index=False, encoding='utf-8-sig')
+                    st.download_button(
+                        label="📄 CSV形式でダウンロード",
+                        data=csv_buffer.getvalue(),
+                        file_name=f"統合_{vendor}_{week.replace('/', '-')}.csv",
+                        mime="text/csv"
+                    )
+                    
+                    # Excel download
+                    excel_buffer = io.BytesIO()
+                    with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                        df_consolidated.to_excel(writer, index=False, sheet_name='統合データ')
+                    st.download_button(
+                        label="📊 Excel形式でダウンロード",
+                        data=excel_buffer.getvalue(),
+                        file_name=f"統合_{vendor}_{week.replace('/', '-')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                    
         except Exception as e:
             st.error(f"エラーが発生しました: {str(e)}")
             st.exception(e)
-    else:
-        st.warning("⚠️ 両方のCSVファイルをアップロードしてください。")
 
 # Instructions
 with st.expander("📖 使い方"):
     st.markdown("""
-    1. 上記のファイルアップロード欄から、2つのCSVファイルをアップロードします
-    2. 「統合実行」ボタンをクリックします
-    3. 処理が完了したら、CSVまたはExcel形式でダウンロードできます
+    ### ワークフロー:
+    1. CSVファイルを準備
+    2. ファイル名に取引先の名前と日付を入れる
+       - 形式: `取引先名_YYYY_MM_DD.csv`
+       - 例: `マルエイ_2025_12_22.csv`
+    3. ファイルをアップロード
+    4. 「データを整理」ボタンをクリック
+    5. コピー&ペースト用データをコピー
+    6. Google Sheetsに貼り付け
     
-    **必要なファイル:**
-    - マルエイ市況.csv
-    - 浜松ベジタブル単価表.csv
+    ### 対応取引先:
+    - マルエイ
+    - 浜松ベジタブル
+    - おやさい（準備中）
+    - アグリ（準備中）
+    
+    ### ファイル名の形式（必須）:
+    - **形式:** `取引先名_YYYY_MM_DD.csv`
+    - **例:** `マルエイ_2025_12_22.csv`
+    - **重要:** 
+      - アンダースコア（_）で区切る
+      - 日付は**YYYY_MM_DD**形式（アンダースコア区切り）
+      - 日付は**月曜日**である必要があります
+    - アンダースコアがない、月曜日でない、または形式が間違っている場合はエラーが表示されます
     """)
 
