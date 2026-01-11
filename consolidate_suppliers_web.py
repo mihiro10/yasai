@@ -36,15 +36,20 @@ def extract_vendor_and_date_from_filename(filename):
     if len(parts) < 2:
         return None, None, f"❌ エラー: ファイル名の形式が正しくありません。\n現在のファイル名: {filename}\n正しい形式: `取引先名_YYYY_MM_DD.csv`\n例: `マルエイ_2025_12_22.csv`"
     
-    vendor_part = parts[0]
+    vendor_part = parts[0].strip()
     date_part = parts[1]
     
-    # Try to find vendor name
+    # Try to find vendor name - check for exact match first, then substring match
     vendor = None
-    for v in SUPPORTED_VENDORS:
-        if v in vendor_part:
-            vendor = v
-            break
+    # First try exact match
+    if vendor_part in SUPPORTED_VENDORS:
+        vendor = vendor_part
+    else:
+        # Then try substring match
+        for v in SUPPORTED_VENDORS:
+            if v in vendor_part or vendor_part in v:
+                vendor = v
+                break
     
     # Try to find date - ONLY accept YYYY_MM_DD format (underscore separated)
     date_str = None
