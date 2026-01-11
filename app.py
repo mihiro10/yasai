@@ -259,15 +259,24 @@ def extract_vendor_and_date_from_filename(filename):
     vendor = None
     vendor_part_normalized = vendor_part.strip()
     
-    # First try exact match
+    # Normalize both for comparison
+    vendor_part_bytes = vendor_part_normalized.encode('utf-8')
+    
+    # First try exact match (string level)
     if vendor_part_normalized in SUPPORTED_VENDORS:
         vendor = vendor_part_normalized
     else:
         # Try matching with each supported vendor
         for v in SUPPORTED_VENDORS:
             v_normalized = v.strip()
-            # Exact match
+            v_bytes = v_normalized.encode('utf-8')
+            
+            # Exact match (string)
             if v_normalized == vendor_part_normalized:
+                vendor = v
+                break
+            # Byte-level comparison (for encoding issues)
+            elif vendor_part_bytes == v_bytes:
                 vendor = v
                 break
             # Check if vendor name is in the filename part
@@ -276,10 +285,6 @@ def extract_vendor_and_date_from_filename(filename):
                 break
             # Check if filename part is in vendor name
             elif vendor_part_normalized in v_normalized:
-                vendor = v
-                break
-            # Byte-level comparison for encoding issues
-            elif vendor_part_normalized.encode('utf-8') == v_normalized.encode('utf-8'):
                 vendor = v
                 break
     
