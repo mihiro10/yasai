@@ -8,11 +8,18 @@ env/
 venv/
 ENV/
 
-# Data files
+# Data files (but keep samples and reference)
 *.csv
 *.xlsx
 *.xls
 !requirements.txt
+!samples/**/*.csv
+!reference/**/*.xlsx
+!past_data/**/*.csv
+!past_data/**/*.xlsx
+
+# Output files
+output/
 
 # Streamlit
 .streamlit/
@@ -24,3 +31,9 @@ Thumbs.db
 # Logs
 *.log
 /tmp/
+
+# Graph files
+*.png
+*.pdf
+!past_data/**/*.png
+!past_data/**/*.pdf
