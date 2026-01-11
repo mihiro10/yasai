@@ -592,15 +592,24 @@ if uploaded_file:
                     st.stop()
                 
                 products = []
+                price_errors = []
                 if vendor == 'マルエイ':
-                    products = extract_maruei_products(df, week)
+                    products, price_errors = extract_maruei_products(df, week)
                 elif vendor == '浜松ベジタブル':
-                    products = extract_hamamatsu_products(df, week)
+                    products, price_errors = extract_hamamatsu_products(df, week)
                 elif vendor == 'アグリ':
-                    products = extract_aguri_products(df, week)
+                    products, price_errors = extract_aguri_products(df, week)
                 elif vendor == 'おやさい':
                     st.warning(f"⚠️ {vendor}の抽出ロジックはまだ実装されていません。")
                     products = []
+                    price_errors = []
+                
+                # Display price errors if any
+                if len(price_errors) > 0:
+                    st.error(f"❌ **価格エラー: {len(price_errors)}件の行で価格に問題があります**")
+                    error_df = pd.DataFrame(price_errors)
+                    st.dataframe(error_df, use_container_width=True)
+                    st.warning("⚠️ これらの行はデータから除外されました。価格を確認してください。")
                 
                 if len(products) == 0:
                     st.error("❌ データが抽出されませんでした。")
