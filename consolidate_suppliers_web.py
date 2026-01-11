@@ -254,14 +254,16 @@ if uploaded_file:
     
     st.info(f"📄 ファイル名: {uploaded_file.name}")
     
+    # Debug: Show what was extracted
+    if '_' in uploaded_file.name:
+        parts = uploaded_file.name.rsplit('.', 1)[0].split('_', 1)
+        detected_vendor_part = parts[0].strip() if len(parts) > 0 else ""
+        st.code(f"検出された取引先名部分: '{detected_vendor_part}'")
+        st.code(f"マッチした取引先: {vendor if vendor else 'なし'}")
+    
     # Check for vendor
     if not vendor:
         st.error(f"❌ サポートされていない取引先です。")
-        # Debug info
-        if '_' in uploaded_file.name:
-            parts = uploaded_file.name.rsplit('.', 1)[0].split('_', 1)
-            detected_vendor_part = parts[0].strip() if len(parts) > 0 else ""
-            st.warning(f"検出された取引先名: '{detected_vendor_part}'")
         st.info(f"**対応取引先:** {', '.join(SUPPORTED_VENDORS)}")
         st.info(f"**ファイル名の形式:** `取引先名_YYYY_MM_DD.csv` (例: `マルエイ_2025_12_22.csv`)")
         st.info(f"**重要:** 日付は月曜日である必要があります。")
