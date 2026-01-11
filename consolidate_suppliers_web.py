@@ -17,6 +17,12 @@ st.markdown("Excelファイルをアップロードして、データを自動�
 # Supported vendors (4 vendors)
 SUPPORTED_VENDORS = ['マルエイ', '浜松ベジタブル', 'おやさい', 'アグリ']
 
+# Also create a mapping for variations (in case of encoding issues)
+VENDOR_ALIASES = {
+    '浜松ベジタブル': '浜松ベジタブル',
+    '浜松ベジタブル': '浜松ベジタブル',  # Same, but helps with matching
+}
+
 def extract_vendor_and_date_from_filename(filename):
     """
     Extract vendor name and date from filename.
@@ -42,26 +48,33 @@ def extract_vendor_and_date_from_filename(filename):
     # Try to find vendor name - normalize and match
     vendor = None
     
-    # Normalize vendor part (remove any extra whitespace, normalize unicode)
+    # Normalize vendor part (remove any extra whitespace)
     vendor_part_normalized = vendor_part.strip()
     
     # First try exact match
     if vendor_part_normalized in SUPPORTED_VENDORS:
         vendor = vendor_part_normalized
     else:
-        # Try case-insensitive and normalized matching
+        # Try normalized matching with multiple methods
         for v in SUPPORTED_VENDORS:
             v_normalized = v.strip()
             # Exact match after normalization
             if v_normalized == vendor_part_normalized:
                 vendor = v
                 break
-            # Substring match
-            elif v_normalized in vendor_part_normalized or vendor_part_normalized in v_normalized:
+            # Check if strings are equal when compared
+            elif vendor_part_normalized == v:
                 vendor = v
                 break
-            # Also try with different unicode normalization
-            elif v_normalized.replace(' ', '') == vendor_part_normalized.replace(' ', ''):
+            # Substring match (either direction)
+            elif v_normalized in vendor_part_normalized:
+                vendor = v
+                break
+            elif vendor_part_normalized in v_normalized:
+                vendor = v
+                break
+            # Check byte representation (for encoding issues)
+            elif vendor_part_normalized.encode('utf-8') == v_normalized.encode('utf-8'):
                 vendor = v
                 break
     
