@@ -7,6 +7,7 @@ Streamlit Webアプリ
 import streamlit as st
 import pandas as pd
 import re
+import unicodedata
 from datetime import datetime, timedelta
 from io import StringIO
 
@@ -270,19 +271,23 @@ def extract_vendor_and_date_from_filename(filename):
     vendor = None
     vendor_part_normalized = vendor_part.strip()
     
+    # Unicode normalization (NFC) to handle combining characters
+    vendor_part_normalized = unicodedata.normalize('NFC', vendor_part_normalized)
+    
     # Normalize both for comparison
     vendor_part_bytes = vendor_part_normalized.encode('utf-8')
     
-    # First try exact match (string level)
-    if vendor_part_normalized in SUPPORTED_VENDORS:
-        vendor = vendor_part_normalized
+    # First try exact match (string level) with normalized SUPPORTED_VENDORS
+    normalized_supported = [unicodedata.normalize('NFC', v) for v in SUPPORTED_VENDORS]
+    if vendor_part_normalized in normalized_supported:
+        vendor = SUPPORTED_VENDORS[normalized_supported.index(vendor_part_normalized)]
     else:
         # Try matching with each supported vendor
         for v in SUPPORTED_VENDORS:
-            v_normalized = v.strip()
+            v_normalized = unicodedata.normalize('NFC', v.strip())
             v_bytes = v_normalized.encode('utf-8')
             
-            # Exact match (string)
+            # Exact match (string) - both normalized
             if v_normalized == vendor_part_normalized:
                 vendor = v
                 break
