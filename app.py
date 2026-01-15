@@ -90,6 +90,8 @@ SUPPORTED_VENDORS = ['マルエイ', '浜松ベジタブル', 'おやさい', '�
 # 統一品名マッピング辞書
 UNIFIED_NAME_MAPPING = {
     'ごぼう': 'ゴボウ',
+    'ゴボウ': 'ゴボウ',
+    'ゴボウ（秋堀）': 'ゴボウ',
     'さつま芋': 'サツマイモ',
     'さつま芋2L': 'サツマイモ',
     '人参': 'ニンジン',
@@ -97,10 +99,13 @@ UNIFIED_NAME_MAPPING = {
     '人参B2L': 'ニンジン',
     '人参L': 'ニンジン',
     '人参L・2L': 'ニンジン',
+    'にんじん': 'ニンジン',
     '大根': 'ダイコン',
     '玉ねぎ': 'タマネギ',
     '玉ねぎM・L・L大': 'タマネギ',
     'メークイン': 'ジャガイモ',
+    'じゃがいも': 'ジャガイモ',
+    'さやか': 'ジャガイモ',
     'キャベツ': 'キャベツ',
     '加工キャベツ': 'キャベツ',
     '小松菜': 'コマツナ',
@@ -118,9 +123,11 @@ UNIFIED_NAME_MAPPING = {
     '丸トマトM玉': 'トマト',
     'ブロッコリー': 'ブロッコリー',
     '胡瓜': 'キュウリ',
+    'キュウリ': 'キュウリ',
     '茄子L': 'ナス',
     '茄子優2L': 'ナス',
     '南瓜': 'カボチャ',
+    'カボチャ': 'カボチャ',
     '国産鶏もも肉チルド': 'チキン',
     '国産鶏ムネ肉チルド': 'チキン',
     '鶏卵LL': 'タマゴ',
@@ -148,6 +155,7 @@ UNIFIED_NAME_MAPPING = {
     '白葱': 'ネギ',
     'おしゃれ葱': 'ネギ',
     'ねぎ': 'ネギ',
+    '青ネギ': 'ネギ',
     '長芋': 'ナガイモ',
     '大和芋': 'ヤマトイモ',
     '里芋': 'サトイモ',
@@ -188,6 +196,8 @@ UNIFIED_NAME_MAPPING = {
     '生椎茸': 'シイタケ',
     '生椎茸 小': 'シイタケ',
     '生椎茸　８枚': 'シイタケ',
+    'しいたけ　S': 'シイタケ',
+    'しいたけ': 'シイタケ',
     'りんご': 'リンゴ',
     'りんご（加工用）': 'リンゴ',
     'りんご（サラダ用）': 'リンゴ',
@@ -214,6 +224,7 @@ UNIFIED_NAME_MAPPING = {
     '剥き玉ねぎ': 'タマネギ',
     '皮付き人参': 'ニンジン',
     '皮付き玉ねぎ': 'タマネギ',
+    '芯取り剥き玉': 'タマネギ',
     '茄子': 'ナス',
 }
 
@@ -504,6 +515,63 @@ def extract_aguri_products(df, week):
     
     return products, price_errors
 
+def extract_oyasai_products(df, week):
+    """Extract products from おやさい"""
+    header_row = None
+    for i in range(len(df)):
+        row_str = ' '.join([str(x) for x in df.iloc[i].values if pd.notna(x)])
+        if '商品番号・商品名' in row_str and '産地' in row_str and '単価kg' in row_str:
+            header_row = i
+            break
+    
+    if header_row is None:
+        return [], []
+    
+    products = []
+    price_errors = []
+    supplier = 'おやさい'
+    
+    # Column indices based on the header:
+    # 相場,商品番号・商品名,,,,産地,時期,規格,荷姿,単位,ロット/週,単価kg,1c/s 着価格
+    # 0    1               5      6    7    8    9    10   11     12
+    for i in range(header_row + 1, len(df)):
+        row = df.iloc[i]
+        if len(row) > 1 and pd.notna(row.iloc[1]):
+            product_name = str(row.iloc[1]).strip()
+            if not product_name or product_name == '' or product_name == 'nan':
+                continue
+            # Skip footer rows
+            if '※' in product_name or 'お見積り' in product_name or '税別' in product_name:
+                continue
+            
+            origin = str(row.iloc[5]).strip() if len(row) > 5 and pd.notna(row.iloc[5]) else ''
+            kg_price = None
+            price_error = None
+            
+            # 単価kg is in column 11 (index 11)
+            if len(row) > 11 and pd.notna(row.iloc[11]):
+                kg_price, price_error = parse_kg_price(row.iloc[11])
+            
+            if kg_price is not None:
+                unified_name = get_unified_name(product_name, UNIFIED_NAME_MAPPING)
+                products.append({
+                    '品名': product_name,
+                    '統一品名（カタカナ）': unified_name if unified_name else '未マッピング',
+                    '取引先': supplier,
+                    '産地': origin,
+                    'kg単価': kg_price,
+                    'その週': week
+                })
+            elif price_error is not None:
+                price_errors.append({
+                    '品名': product_name,
+                    '産地': origin,
+                    'エラー': price_error,
+                    '行番号': i + 1
+                })
+    
+    return products, price_errors
+
 def extract_date_from_aguri_header(df):
     """Extract date from アグリ CSV header"""
     for i in range(min(5, len(df))):
@@ -600,9 +668,7 @@ if uploaded_file:
                 elif vendor == 'アグリ':
                     products, price_errors = extract_aguri_products(df, week)
                 elif vendor == 'おやさい':
-                    st.warning(f"⚠️ {vendor}の抽出ロジックはまだ実装されていません。")
-                    products = []
-                    price_errors = []
+                    products, price_errors = extract_oyasai_products(df, week)
                 
                 # Display price errors if any
                 if len(price_errors) > 0:
