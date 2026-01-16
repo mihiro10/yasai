@@ -676,6 +676,30 @@ if uploaded_file:
                 elif vendor == 'おやさい':
                     products, price_errors = extract_oyasai_products(df, week)
                 
+                # Check for duplicates (品名, 取引先, 産地)
+                seen_combinations = {}
+                duplicates = []
+                unique_products = []
+                
+                for product in products:
+                    combination_key = (product['品名'], product['取引先'], product['産地'])
+                    
+                    if combination_key in seen_combinations:
+                        # This is a duplicate - record it and skip
+                        duplicates.append({
+                            '品名': product['品名'],
+                            '取引先': product['取引先'],
+                            '産地': product['産地'],
+                            'kg単価': product['kg単価'],
+                            '統一品名（カタカナ）': product['統一品名（カタカナ）'],
+                            '既存のkg単価': seen_combinations[combination_key]
+                        })
+                        continue  # Skip this duplicate
+                    
+                    # Record this combination and its price
+                    seen_combinations[combination_key] = product['kg単価']
+                    unique_products.append(product)
+                
                 # Display price errors if any
                 if len(price_errors) > 0:
                     st.error(f"❌ **価格エラー: {len(price_errors)}件の行で価格に問題があります**")
@@ -683,10 +707,19 @@ if uploaded_file:
                     st.dataframe(error_df, use_container_width=True)
                     st.warning("⚠️ これらの行はデータから除外されました。価格を確認してください。")
                 
-                if len(products) == 0:
+                # Display duplicates if any
+                if len(duplicates) > 0:
+                    st.warning(f"⚠️ **重複組み合わせが除外されました: {len(duplicates)}件の重複が見つかりました**")
+                    st.info("以下の（品名, 取引先, 産地）の組み合わせは重複のため、CSVファイルには含まれていません。\nこれらのレコードは手動で追加するか、異なる名前でファイルを再アップロードしてください。")
+                    duplicates_df = pd.DataFrame(duplicates)
+                    duplicates_df = duplicates_df[['品名', '取引先', '産地', '統一品名（カタカナ）', 'kg単価', '既存のkg単価']]
+                    duplicates_df.columns = ['品名', '取引先', '産地', '統一品名（カタカナ）', 'このレコードのkg単価', '既に含まれているレコードのkg単価']
+                    st.dataframe(duplicates_df, use_container_width=True)
+                
+                if len(unique_products) == 0:
                     st.error("❌ データが抽出されませんでした。")
                 else:
-                    df_consolidated = pd.DataFrame(products)
+                    df_consolidated = pd.DataFrame(unique_products)
                     df_consolidated = df_consolidated[['品名', '統一品名（カタカナ）', '取引先', '産地', 'kg単価', 'その週']]
                     df_consolidated = df_consolidated.sort_values(['その週', '統一品名（カタカナ）', '品名', '取引先'])
                     
@@ -699,6 +732,8 @@ if uploaded_file:
                             st.warning(f"  - {product}")
                     
                     st.success(f"✓ データ整理完了！ {len(df_consolidated)}件のデータ")
+                    if len(duplicates) > 0:
+                        st.info(f"ℹ️ 元のデータ: {len(products)}件 → 重複除外後: {len(df_consolidated)}件（{len(duplicates)}件の重複を除外）")
                     
                     col1, col2, col3 = st.columns(3)
                     with col1:
