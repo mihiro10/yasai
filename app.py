@@ -8,6 +8,8 @@ import streamlit as st
 import pandas as pd
 import re
 import unicodedata
+import json
+import os
 from datetime import datetime, timedelta
 from io import StringIO
 
@@ -85,11 +87,143 @@ with st.expander("📖 使い方ガイド", expanded=False):
     - ファイルが正しい取引先の形式か確認
     """)
 
+# マッピング辞書の管理セクション
+with st.expander("🔧 統一品名マッピング辞書の管理", expanded=False):
+    st.markdown("""
+    ### マッピング辞書について
+    
+    この辞書は、各取引先の品名を統一品名（カタカナ）にマッピングするために使用されます。
+    
+    - **左側（品名）**: 取引先のCSVファイルに記載されている実際の品名
+    - **右側（統一品名）**: マッピング先の統一品名（カタカナ）
+    
+    新しい品名が追加された場合や、マッピングを変更したい場合は、このセクションで編集できます。
+    """)
+    
+    # マッピングをDataFrameに変換
+    mapping_data = []
+    for product_name, unified_name in st.session_state.product_mapping.items():
+        mapping_data.append({
+            '品名': product_name,
+            '統一品名（カタカナ）': unified_name if unified_name else '(未設定)'
+        })
+    
+    mapping_df = pd.DataFrame(mapping_data)
+    mapping_df = mapping_df.sort_values('品名')
+    
+    # 検索機能
+    search_term = st.text_input("🔍 品名で検索", placeholder="例: かぼちゃ、トマト...")
+    if search_term:
+        filtered_df = mapping_df[mapping_df['品名'].str.contains(search_term, case=False, na=False) | 
+                                 mapping_df['統一品名（カタカナ）'].str.contains(search_term, case=False, na=False)]
+        st.dataframe(filtered_df, use_container_width=True, height=400)
+        st.info(f"検索結果: {len(filtered_df)}件 / 全{len(mapping_df)}件")
+    else:
+        st.dataframe(mapping_df, use_container_width=True, height=400)
+        st.info(f"全{len(mapping_df)}件のマッピング")
+    
+    st.markdown("---")
+    st.subheader("➕ 新しいマッピングを追加")
+    
+    col1, col2, col3 = st.columns([2, 2, 1])
+    with col1:
+        new_product_name = st.text_input("品名", placeholder="例: 新商品名", key="new_product")
+    with col2:
+        new_unified_name = st.text_input("統一品名（カタカナ）", placeholder="例: シンショウヒン", key="new_unified")
+    with col3:
+        st.write("")  # スペーサー
+        add_button = st.button("追加", type="primary")
+    
+    if add_button:
+        if new_product_name and new_unified_name:
+            if new_product_name in st.session_state.product_mapping:
+                st.error(f"❌ '{new_product_name}' は既に存在します。編集セクションで更新してください。")
+            else:
+                st.session_state.product_mapping[new_product_name] = new_unified_name
+                if save_mapping(st.session_state.product_mapping):
+                    st.success(f"✓ '{new_product_name}' → '{new_unified_name}' を追加しました")
+                    st.rerun()
+        else:
+            st.error("❌ 品名と統一品名の両方を入力してください")
+    
+    st.markdown("---")
+    st.subheader("✏️ マッピングを編集・削除")
+    
+    # 編集用の選択
+    edit_product_name = st.selectbox(
+        "編集する品名を選択",
+        options=sorted(st.session_state.product_mapping.keys()),
+        key="edit_select"
+    )
+    
+    if edit_product_name:
+        col1, col2, col3 = st.columns([2, 2, 1])
+        with col1:
+            st.text_input("品名", value=edit_product_name, disabled=True, key="edit_product_display")
+        with col2:
+            current_unified = st.session_state.product_mapping[edit_product_name] or ''
+            edited_unified = st.text_input("統一品名（カタカナ）", value=current_unified, key="edit_unified")
+        with col3:
+            st.write("")  # スペーサー
+            col3_1, col3_2 = st.columns(2)
+            with col3_1:
+                update_button = st.button("更新", type="primary")
+            with col3_2:
+                delete_button = st.button("削除", type="secondary")
+        
+        if update_button:
+            if edited_unified:
+                st.session_state.product_mapping[edit_product_name] = edited_unified
+                if save_mapping(st.session_state.product_mapping):
+                    st.success(f"✓ '{edit_product_name}' のマッピングを更新しました")
+                    st.rerun()
+            else:
+                st.error("❌ 統一品名を入力してください（削除する場合は「削除」ボタンを使用）")
+        
+        if delete_button:
+            confirm_key = f"confirm_delete_{edit_product_name}"
+            if st.session_state.get(confirm_key, False):
+                del st.session_state.product_mapping[edit_product_name]
+                st.session_state[confirm_key] = False
+                if save_mapping(st.session_state.product_mapping):
+                    st.success(f"✓ '{edit_product_name}' を削除しました")
+                    st.rerun()
+            else:
+                st.session_state[confirm_key] = True
+                st.warning(f"⚠️ 本当に '{edit_product_name}' を削除しますか？もう一度「削除」ボタンを押してください。")
+    
+    st.markdown("---")
+    st.subheader("💾 マッピングの保存・リセット")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("💾 変更を保存", type="primary"):
+            if save_mapping(st.session_state.product_mapping):
+                st.success("✓ マッピングを保存しました")
+    with col2:
+        if st.button("🔄 デフォルトにリセット"):
+            st.session_state.product_mapping = DEFAULT_UNIFIED_NAME_MAPPING.copy()
+            save_mapping(st.session_state.product_mapping)
+            st.success("✓ デフォルトのマッピングにリセットしました")
+            st.rerun()
+    with col3:
+        # マッピングをダウンロード
+        mapping_json = json.dumps(st.session_state.product_mapping, ensure_ascii=False, indent=2)
+        st.download_button(
+            label="📥 JSONでダウンロード",
+            data=mapping_json,
+            file_name="product_mapping.json",
+            mime="application/json"
+        )
+
 # Supported vendors
 SUPPORTED_VENDORS = ['マルエイ', '浜松ベジタブル', 'おやさい', 'アグリ']
 
-# 統一品名マッピング辞書
-UNIFIED_NAME_MAPPING = {
+# マッピングファイルのパス
+MAPPING_FILE = 'product_mapping.json'
+
+# デフォルトの統一品名マッピング辞書
+DEFAULT_UNIFIED_NAME_MAPPING = {
     'ごぼう': 'ゴボウ',
     'ゴボウ': 'ゴボウ',
     'ゴボウ（秋堀）': 'ゴボウ',
@@ -229,6 +363,30 @@ UNIFIED_NAME_MAPPING = {
     '芯取り剥き玉': 'タマネギ',
     '茄子': 'ナス',
 }
+
+def load_mapping():
+    """マッピング辞書をファイルから読み込む（存在しない場合はデフォルトを使用）"""
+    if os.path.exists(MAPPING_FILE):
+        try:
+            with open(MAPPING_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return DEFAULT_UNIFIED_NAME_MAPPING.copy()
+    return DEFAULT_UNIFIED_NAME_MAPPING.copy()
+
+def save_mapping(mapping):
+    """マッピング辞書をファイルに保存"""
+    try:
+        with open(MAPPING_FILE, 'w', encoding='utf-8') as f:
+            json.dump(mapping, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        st.error(f"保存エラー: {str(e)}")
+        return False
+
+# セッション状態の初期化
+if 'product_mapping' not in st.session_state:
+    st.session_state.product_mapping = load_mapping()
 
 def get_unified_name(product_name, mapping):
     """品名から統一品名（カタカナ）を取得"""
@@ -372,7 +530,7 @@ def parse_kg_price(price_str):
     
     return None, f"価格が抽出できませんでした: '{original_str}'"
 
-def extract_maruei_products(df, week):
+def extract_maruei_products(df, week, mapping):
     """Extract products from マルエイ"""
     header_row = None
     for i in range(len(df)):
@@ -410,7 +568,7 @@ def extract_maruei_products(df, week):
                         pass
             
             if kg_price is not None:
-                unified_name = get_unified_name(product_name, UNIFIED_NAME_MAPPING)
+                unified_name = get_unified_name(product_name, mapping)
                 products.append({
                     '品名': product_name,
                     '統一品名（カタカナ）': unified_name if unified_name else '未マッピング',
@@ -430,7 +588,7 @@ def extract_maruei_products(df, week):
     
     return products, price_errors
 
-def extract_hamamatsu_products(df, week):
+def extract_hamamatsu_products(df, week, mapping):
     """Extract products from 浜松ベジタブル"""
     header_row = None
     for i in range(len(df)):
@@ -463,7 +621,7 @@ def extract_hamamatsu_products(df, week):
                 kg_price, price_error = parse_kg_price(row.iloc[6])
             
             if kg_price is not None:
-                unified_name = get_unified_name(product_name, UNIFIED_NAME_MAPPING)
+                unified_name = get_unified_name(product_name, mapping)
                 products.append({
                     '品名': product_name,
                     '統一品名（カタカナ）': unified_name if unified_name else '未マッピング',
@@ -482,7 +640,7 @@ def extract_hamamatsu_products(df, week):
     
     return products, price_errors
 
-def extract_aguri_products(df, week):
+def extract_aguri_products(df, week, mapping):
     """Extract products from アグリ"""
     products = []
     price_errors = []
@@ -502,7 +660,7 @@ def extract_aguri_products(df, week):
                         kg_price, price_error = parse_kg_price(df.iloc[i, 6])
                     
                     if kg_price is not None:
-                        unified_name = get_unified_name(product_name, UNIFIED_NAME_MAPPING)
+                        unified_name = get_unified_name(product_name, mapping)
                         products.append({
                             '品名': product_name,
                             '統一品名（カタカナ）': unified_name if unified_name else '未マッピング',
@@ -521,7 +679,7 @@ def extract_aguri_products(df, week):
     
     return products, price_errors
 
-def extract_oyasai_products(df, week):
+def extract_oyasai_products(df, week, mapping):
     """Extract products from おやさい"""
     header_row = None
     for i in range(len(df)):
@@ -559,7 +717,7 @@ def extract_oyasai_products(df, week):
                 kg_price, price_error = parse_kg_price(row.iloc[11])
             
             if kg_price is not None:
-                unified_name = get_unified_name(product_name, UNIFIED_NAME_MAPPING)
+                unified_name = get_unified_name(product_name, mapping)
                 products.append({
                     '品名': product_name,
                     '統一品名（カタカナ）': unified_name if unified_name else '未マッピング',
@@ -665,16 +823,19 @@ if uploaded_file:
                     st.error("❌ 日付が抽出できませんでした")
                     st.stop()
                 
+                # 最新のマッピング辞書を取得
+                current_mapping = st.session_state.product_mapping
+                
                 products = []
                 price_errors = []
                 if vendor == 'マルエイ':
-                    products, price_errors = extract_maruei_products(df, week)
+                    products, price_errors = extract_maruei_products(df, week, current_mapping)
                 elif vendor == '浜松ベジタブル':
-                    products, price_errors = extract_hamamatsu_products(df, week)
+                    products, price_errors = extract_hamamatsu_products(df, week, current_mapping)
                 elif vendor == 'アグリ':
-                    products, price_errors = extract_aguri_products(df, week)
+                    products, price_errors = extract_aguri_products(df, week, current_mapping)
                 elif vendor == 'おやさい':
-                    products, price_errors = extract_oyasai_products(df, week)
+                    products, price_errors = extract_oyasai_products(df, week, current_mapping)
                 
                 # Check for duplicates (品名, 取引先, 産地)
                 seen_combinations = {}
