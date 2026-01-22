@@ -177,6 +177,17 @@ if 'product_mapping' not in st.session_state:
     st.session_state.mapping_file = MAPPING_FILE
     st.session_state.default_mapping = DEFAULT_UNIFIED_NAME_MAPPING
 
+def save_mapping(mapping):
+    """マッピング辞書をファイルに保存"""
+    mapping_file = st.session_state.get('mapping_file', 'product_mapping.json')
+    try:
+        with open(mapping_file, 'w', encoding='utf-8') as f:
+            json.dump(mapping, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        st.error(f"保存エラー: {str(e)}")
+        return False
+
 st.title("🥬 野菜価格統合ツール（統一品名マッピング付き）")
 st.markdown("CSVファイルをアップロードして、データを自動で整理し、統一品名（カタカナ）をマッピングします。")
 
@@ -381,17 +392,6 @@ with st.expander("🔧 統一品名マッピング辞書の管理", expanded=Fal
 
 # Supported vendors
 SUPPORTED_VENDORS = ['マルエイ', '浜松ベジタブル', 'おやさい', 'アグリ']
-
-def save_mapping(mapping):
-    """マッピング辞書をファイルに保存"""
-    mapping_file = st.session_state.get('mapping_file', 'product_mapping.json')
-    try:
-        with open(mapping_file, 'w', encoding='utf-8') as f:
-            json.dump(mapping, f, ensure_ascii=False, indent=2)
-        return True
-    except Exception as e:
-        st.error(f"保存エラー: {str(e)}")
-        return False
 
 def get_unified_name(product_name, mapping):
     """品名から統一品名（カタカナ）を取得"""
