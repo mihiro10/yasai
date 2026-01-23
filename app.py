@@ -366,21 +366,14 @@ with st.expander("🔧 統一品名マッピング辞書の管理", expanded=Fal
                 st.warning(f"⚠️ 本当に '{edit_product_name}' を削除しますか？もう一度「削除」ボタンを押してください。")
     
     st.markdown("---")
-    st.subheader("💾 マッピングの保存・リセット")
+    st.subheader("💾 マッピングの保存")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     with col1:
         if st.button("💾 変更を保存", type="primary"):
             if save_mapping(st.session_state.product_mapping):
                 st.success("✓ マッピングを保存しました")
     with col2:
-        if st.button("🔄 デフォルトにリセット"):
-            default_mapping = st.session_state.get('default_mapping', {})
-            st.session_state.product_mapping = default_mapping.copy()
-            save_mapping(st.session_state.product_mapping)
-            st.success("✓ デフォルトのマッピングにリセットしました")
-            st.rerun()
-    with col3:
         # マッピングをダウンロード
         mapping_json = json.dumps(st.session_state.product_mapping, ensure_ascii=False, indent=2)
         st.download_button(
