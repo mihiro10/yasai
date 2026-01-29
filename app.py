@@ -366,7 +366,9 @@ with st.expander("🔧 統一品名マッピング辞書の管理", expanded=Fal
                 st.warning(f"⚠️ 本当に '{edit_product_name}' を削除しますか？もう一度「削除」ボタンを押してください。")
     
     st.markdown("---")
-    st.subheader("💾 マッピングの保存")
+    st.subheader("💾 マッピングの保存・復元")
+    
+    st.info("💡 **重要**: Streamlit Cloudでは、アプリが再起動されると保存したファイルが失われる可能性があります。カスタムマッピングを保持するには、「📥 JSONでダウンロード」でファイルを保存し、必要に応じて「📤 JSONから復元」で読み込んでください。")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -382,6 +384,36 @@ with st.expander("🔧 統一品名マッピング辞書の管理", expanded=Fal
             file_name="product_mapping.json",
             mime="application/json"
         )
+    
+    st.markdown("---")
+    st.subheader("📤 保存したマッピングを復元")
+    
+    uploaded_mapping = st.file_uploader(
+        "以前にダウンロードした `product_mapping.json` ファイルをアップロードして復元",
+        type=['json'],
+        key="mapping_upload"
+    )
+    
+    if uploaded_mapping is not None:
+        try:
+            content = uploaded_mapping.read().decode('utf-8')
+            restored_mapping = json.loads(content)
+            
+            if isinstance(restored_mapping, dict):
+                st.success(f"✓ マッピングファイルを読み込みました（{len(restored_mapping)}件のエントリ）")
+                st.json(restored_mapping)
+                
+                if st.button("🔄 このマッピングで上書き", type="primary"):
+                    st.session_state.product_mapping = restored_mapping
+                    if save_mapping(st.session_state.product_mapping):
+                        st.success("✓ マッピングを復元しました")
+                        st.rerun()
+            else:
+                st.error("❌ 無効なマッピングファイル形式です。JSONオブジェクト（辞書）である必要があります。")
+        except json.JSONDecodeError:
+            st.error("❌ JSONファイルの解析に失敗しました。正しいJSON形式のファイルをアップロードしてください。")
+        except Exception as e:
+            st.error(f"❌ エラー: {str(e)}")
 
 # Supported vendors
 SUPPORTED_VENDORS = ['マルエイ', '浜松ベジタブル', 'おやさい', 'アグリ']
