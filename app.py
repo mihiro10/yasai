@@ -179,7 +179,11 @@ if 'product_mapping' not in st.session_state:
     st.session_state.default_mapping = DEFAULT_UNIFIED_NAME_MAPPING
 
 def save_mapping(mapping):
-    """マッピング辞書をファイルに保存し、GitHubにコミット・プッシュ"""
+    """マッピング辞書をファイルに保存し、GitHubにコミット・プッシュ
+    
+    Returns:
+        tuple: (success: bool, git_status_message: str)
+    """
     mapping_file = st.session_state.get('mapping_file', 'product_mapping.json')
     try:
         # ファイルに保存
@@ -187,7 +191,7 @@ def save_mapping(mapping):
             json.dump(mapping, f, ensure_ascii=False, indent=2)
         
         # GitHubにコミット・プッシュ（リポジトリに永続化）
-        git_success = False
+        git_status = "ローカルに保存しました（Git操作はスキップされました）"
         try:
             # 現在のディレクトリを確認
             current_dir = os.getcwd()
@@ -228,8 +232,8 @@ def save_mapping(mapping):
                         cwd=current_dir
                     )
                     
-                    # プッシュ
                     if commit_result.returncode == 0:
+                        # プッシュ
                         push_result = subprocess.run(
                             ['git', 'push', 'origin', 'main'],
                             capture_output=True,
@@ -238,19 +242,23 @@ def save_mapping(mapping):
                             check=False
                         )
                         if push_result.returncode == 0:
-                            git_success = True
+                            git_status = "✓ GitHubに正常にプッシュされました（永続化されました）"
+                        else:
+                            git_status = f"⚠️ コミットは成功しましたが、プッシュに失敗しました: {push_result.stderr.strip() or '認証エラーの可能性があります'}"
+                    else:
+                        git_status = f"⚠️ コミットに失敗しました: {commit_result.stderr.strip() or '不明なエラー'}"
                 else:
                     # 変更がない場合は既に最新
-                    git_success = True
+                    git_status = "✓ 変更はありません（既に最新の状態です）"
+            else:
+                git_status = "ローカルに保存しました（Gitリポジトリではありません）"
         except Exception as git_error:
             # Git操作が失敗してもファイル保存は成功とする
-            # （ローカル環境やGit設定がない場合など）
-            pass
+            git_status = f"ローカルに保存しました（Git操作エラー: {str(git_error)}）"
         
-        return True
+        return True, git_status
     except Exception as e:
-        st.error(f"保存エラー: {str(e)}")
-        return False
+        return False, f"保存エラー: {str(e)}"
 
 st.title("🥬 野菜価格統合ツール（統一品名マッピング付き）")
 st.markdown("CSVファイルをアップロードして、データを自動で整理し、統一品名（カタカナ）をマッピングします。")
@@ -377,8 +385,10 @@ with st.expander("🔧 統一品名マッピング辞書の管理", expanded=Fal
                 st.error(f"❌ '{new_product_name}' は既に存在します。編集セクションで更新してください。")
             else:
                 st.session_state.product_mapping[new_product_name] = new_unified_name
-                if save_mapping(st.session_state.product_mapping):
+                success, git_status = save_mapping(st.session_state.product_mapping)
+                if success:
                     st.success(f"✓ '{new_product_name}' → '{new_unified_name}' を追加しました")
+                    st.info(git_status)
                     st.rerun()
         else:
             st.error("❌ 品名と統一品名の両方を入力してください")
@@ -411,8 +421,10 @@ with st.expander("🔧 統一品名マッピング辞書の管理", expanded=Fal
         if update_button:
             if edited_unified:
                 st.session_state.product_mapping[edit_product_name] = edited_unified
-                if save_mapping(st.session_state.product_mapping):
+                success, git_status = save_mapping(st.session_state.product_mapping)
+                if success:
                     st.success(f"✓ '{edit_product_name}' のマッピングを更新しました")
+                    st.info(git_status)
                     st.rerun()
             else:
                 st.error("❌ 統一品名を入力してください（削除する場合は「削除」ボタンを使用）")
@@ -422,8 +434,10 @@ with st.expander("🔧 統一品名マッピング辞書の管理", expanded=Fal
             if st.session_state.get(confirm_key, False):
                 del st.session_state.product_mapping[edit_product_name]
                 st.session_state[confirm_key] = False
-                if save_mapping(st.session_state.product_mapping):
+                success, git_status = save_mapping(st.session_state.product_mapping)
+                if success:
                     st.success(f"✓ '{edit_product_name}' を削除しました")
+                    st.info(git_status)
                     st.rerun()
             else:
                 st.session_state[confirm_key] = True
@@ -437,8 +451,10 @@ with st.expander("🔧 統一品名マッピング辞書の管理", expanded=Fal
     col1, col2 = st.columns(2)
     with col1:
         if st.button("💾 変更を保存", type="primary"):
-            if save_mapping(st.session_state.product_mapping):
+            success, git_status = save_mapping(st.session_state.product_mapping)
+            if success:
                 st.success("✓ マッピングを保存しました")
+                st.info(git_status)
     with col2:
         # マッピングをダウンロード
         mapping_json = json.dumps(st.session_state.product_mapping, ensure_ascii=False, indent=2)
@@ -469,8 +485,10 @@ with st.expander("🔧 統一品名マッピング辞書の管理", expanded=Fal
                 
                 if st.button("🔄 このマッピングで上書き", type="primary"):
                     st.session_state.product_mapping = restored_mapping
-                    if save_mapping(st.session_state.product_mapping):
+                    success, git_status = save_mapping(st.session_state.product_mapping)
+                    if success:
                         st.success("✓ マッピングを復元しました")
+                        st.info(git_status)
                         st.rerun()
             else:
                 st.error("❌ 無効なマッピングファイル形式です。JSONオブジェクト（辞書）である必要があります。")
