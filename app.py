@@ -405,9 +405,10 @@ with st.expander("📖 使い方ガイド", expanded=False):
     
     ### ステップ4: 結果を確認
     
-    1. **警告の確認**
-       - マッピングされていない品名がある場合、黄色の警告が表示されます
-       - 未マッピングの品名が一覧表示されます
+    1. **エラーの確認**
+       - マッピングされていない品名がある場合、エラーメッセージが表示されます
+       - 未マッピングの品名はデータから除外され、エラー一覧に表示されます
+       - 価格に問題がある行も同様にエラーとして表示されます
     
     2. **データの確認**
        - データ数、取引先、週が表示されます
@@ -771,7 +772,7 @@ def extract_maruei_products(df, week, mapping):
             break
     
     if header_row is None:
-        return [], []
+        return [], [], []
     
     # Build column name to index mapping from header row
     header_row_data = df.iloc[header_row]
@@ -798,6 +799,7 @@ def extract_maruei_products(df, week, mapping):
     
     products = []
     price_errors = []
+    mapping_errors = []
     supplier = 'マルエイ'
     
     for i in range(header_row + 2, len(df)):
@@ -823,14 +825,23 @@ def extract_maruei_products(df, week, mapping):
             
             if kg_price is not None:
                 unified_name = get_unified_name(product_name, mapping)
-                products.append({
-                    '品名': product_name,
-                    '統一品名（カタカナ）': unified_name if unified_name else '未マッピング',
-                    '取引先': supplier,
-                    '産地': origin,
-                    'kg単価': kg_price,
-                    'その週': week
-                })
+                if unified_name is None:
+                    # Record mapping error and skip this product
+                    mapping_errors.append({
+                        '品名': product_name,
+                        '産地': origin,
+                        'エラー': '統一品名のマッピングが見つかりませんでした',
+                        '行番号': i + 1
+                    })
+                else:
+                    products.append({
+                        '品名': product_name,
+                        '統一品名（カタカナ）': unified_name,
+                        '取引先': supplier,
+                        '産地': origin,
+                        'kg単価': kg_price,
+                        'その週': week
+                    })
             elif price_error is not None:
                 # Record error for this product
                 price_errors.append({
@@ -840,7 +851,7 @@ def extract_maruei_products(df, week, mapping):
                     '行番号': i + 1
                 })
     
-    return products, price_errors
+    return products, price_errors, mapping_errors
 
 def extract_hamamatsu_products(df, week, mapping):
     """Extract products from 浜松ベジタブル"""
@@ -852,7 +863,7 @@ def extract_hamamatsu_products(df, week, mapping):
             break
     
     if header_row is None:
-        return [], []
+        return [], [], []
     
     # Build column name to index mapping from header row
     header_row_data = df.iloc[header_row]
@@ -880,6 +891,7 @@ def extract_hamamatsu_products(df, week, mapping):
     
     products = []
     price_errors = []
+    mapping_errors = []
     supplier = '浜松ベジタブル'
     
     for i in range(header_row + 1, len(df)):
@@ -900,14 +912,23 @@ def extract_hamamatsu_products(df, week, mapping):
             
             if kg_price is not None:
                 unified_name = get_unified_name(product_name, mapping)
-                products.append({
-                    '品名': product_name,
-                    '統一品名（カタカナ）': unified_name if unified_name else '未マッピング',
-                    '取引先': supplier,
-                    '産地': origin,
-                    'kg単価': kg_price,
-                    'その週': week
-                })
+                if unified_name is None:
+                    # Record mapping error and skip this product
+                    mapping_errors.append({
+                        '品名': product_name,
+                        '産地': origin,
+                        'エラー': '統一品名のマッピングが見つかりませんでした',
+                        '行番号': i + 1
+                    })
+                else:
+                    products.append({
+                        '品名': product_name,
+                        '統一品名（カタカナ）': unified_name,
+                        '取引先': supplier,
+                        '産地': origin,
+                        'kg単価': kg_price,
+                        'その週': week
+                    })
             elif price_error is not None:
                 price_errors.append({
                     '品名': product_name,
@@ -916,7 +937,7 @@ def extract_hamamatsu_products(df, week, mapping):
                     '行番号': i + 1
                 })
     
-    return products, price_errors
+    return products, price_errors, mapping_errors
 
 def extract_aguri_products(df, week, mapping):
     """Extract products from アグリ"""
@@ -960,6 +981,7 @@ def extract_aguri_products(df, week, mapping):
     
     products = []
     price_errors = []
+    mapping_errors = []
     supplier = 'アグリ'
     
     # Start from row after header, or row 3 if no header found
@@ -980,14 +1002,23 @@ def extract_aguri_products(df, week, mapping):
                     
                     if kg_price is not None:
                         unified_name = get_unified_name(product_name, mapping)
-                        products.append({
-                            '品名': product_name,
-                            '統一品名（カタカナ）': unified_name if unified_name else '未マッピング',
-                            '取引先': supplier,
-                            '産地': origin,
-                            'kg単価': kg_price,
-                            'その週': week
-                        })
+                        if unified_name is None:
+                            # Record mapping error and skip this product
+                            mapping_errors.append({
+                                '品名': product_name,
+                                '産地': origin,
+                                'エラー': '統一品名のマッピングが見つかりませんでした',
+                                '行番号': i + 1
+                            })
+                        else:
+                            products.append({
+                                '品名': product_name,
+                                '統一品名（カタカナ）': unified_name,
+                                '取引先': supplier,
+                                '産地': origin,
+                                'kg単価': kg_price,
+                                'その週': week
+                            })
                     elif price_error is not None:
                         price_errors.append({
                             '品名': product_name,
@@ -996,7 +1027,7 @@ def extract_aguri_products(df, week, mapping):
                             '行番号': i + 1
                         })
     
-    return products, price_errors
+    return products, price_errors, mapping_errors
 
 def extract_oyasai_products(df, week, mapping):
     """Extract products from おやさい"""
@@ -1008,7 +1039,7 @@ def extract_oyasai_products(df, week, mapping):
             break
     
     if header_row is None:
-        return [], []
+        return [], [], []
     
     # Build column name to index mapping from header row
     header_row_data = df.iloc[header_row]
@@ -1047,6 +1078,7 @@ def extract_oyasai_products(df, week, mapping):
     
     products = []
     price_errors = []
+    mapping_errors = []
     supplier = 'おやさい'
     
     for i in range(header_row + 1, len(df)):
@@ -1068,14 +1100,23 @@ def extract_oyasai_products(df, week, mapping):
             
             if kg_price is not None:
                 unified_name = get_unified_name(product_name, mapping)
-                products.append({
-                    '品名': product_name,
-                    '統一品名（カタカナ）': unified_name if unified_name else '未マッピング',
-                    '取引先': supplier,
-                    '産地': origin,
-                    'kg単価': kg_price,
-                    'その週': week
-                })
+                if unified_name is None:
+                    # Record mapping error and skip this product
+                    mapping_errors.append({
+                        '品名': product_name,
+                        '産地': origin,
+                        'エラー': '統一品名のマッピングが見つかりませんでした',
+                        '行番号': i + 1
+                    })
+                else:
+                    products.append({
+                        '品名': product_name,
+                        '統一品名（カタカナ）': unified_name,
+                        '取引先': supplier,
+                        '産地': origin,
+                        'kg単価': kg_price,
+                        'その週': week
+                    })
             elif price_error is not None:
                 price_errors.append({
                     '品名': product_name,
@@ -1084,7 +1125,7 @@ def extract_oyasai_products(df, week, mapping):
                     '行番号': i + 1
                 })
     
-    return products, price_errors
+    return products, price_errors, mapping_errors
 
 def extract_date_from_aguri_header(df):
     """Extract date from アグリ CSV header"""
@@ -1178,14 +1219,15 @@ if uploaded_file:
                 
                 products = []
                 price_errors = []
+                mapping_errors = []
                 if vendor == 'マルエイ':
-                    products, price_errors = extract_maruei_products(df, week, current_mapping)
+                    products, price_errors, mapping_errors = extract_maruei_products(df, week, current_mapping)
                 elif vendor == '浜松ベジタブル':
-                    products, price_errors = extract_hamamatsu_products(df, week, current_mapping)
+                    products, price_errors, mapping_errors = extract_hamamatsu_products(df, week, current_mapping)
                 elif vendor == 'アグリ':
-                    products, price_errors = extract_aguri_products(df, week, current_mapping)
+                    products, price_errors, mapping_errors = extract_aguri_products(df, week, current_mapping)
                 elif vendor == 'おやさい':
-                    products, price_errors = extract_oyasai_products(df, week, current_mapping)
+                    products, price_errors, mapping_errors = extract_oyasai_products(df, week, current_mapping)
                 
                 # Check for duplicates (品名, 取引先, 産地)
                 seen_combinations = {}
@@ -1218,6 +1260,13 @@ if uploaded_file:
                     st.dataframe(error_df, use_container_width=True)
                     st.warning("⚠️ これらの行はデータから除外されました。価格を確認してください。")
                 
+                # Display mapping errors if any
+                if len(mapping_errors) > 0:
+                    st.error(f"❌ **マッピングエラー: {len(mapping_errors)}件の行で統一品名のマッピングが見つかりませんでした**")
+                    mapping_error_df = pd.DataFrame(mapping_errors)
+                    st.dataframe(mapping_error_df, use_container_width=True)
+                    st.warning("⚠️ これらの行はデータから除外されました。統一品名マッピング辞書に追加してください。")
+                
                 # Display duplicates if any
                 if len(duplicates) > 0:
                     st.warning(f"⚠️ **重複組み合わせが除外されました: {len(duplicates)}件の重複が見つかりました**")
@@ -1233,14 +1282,6 @@ if uploaded_file:
                     df_consolidated = pd.DataFrame(unique_products)
                     df_consolidated = df_consolidated[['品名', '統一品名（カタカナ）', '取引先', '産地', 'kg単価', 'その週']]
                     df_consolidated = df_consolidated.sort_values(['その週', '統一品名（カタカナ）', '品名', '取引先'])
-                    
-                    # Check for unmapped products
-                    unmapped = df_consolidated[df_consolidated['統一品名（カタカナ）'] == '未マッピング']
-                    if len(unmapped) > 0:
-                        st.warning(f"⚠️ **警告: {len(unmapped)}件の品名がマッピングされていません:**")
-                        unmapped_products = unmapped['品名'].unique()
-                        for product in unmapped_products:
-                            st.warning(f"  - {product}")
                     
                     st.success(f"✓ データ整理完了！ {len(df_consolidated)}件のデータ")
                     if len(duplicates) > 0:
