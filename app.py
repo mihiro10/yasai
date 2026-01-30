@@ -644,12 +644,17 @@ def get_unified_name(product_name, mapping):
     マッピングの優先順位:
     1. 正規化後の完全一致
     2. 正規化前の完全一致（後方互換性のため）
-    3. 部分一致（長いキーから順に検索）
-    4. 逆方向の部分一致
+    3. 空白を除いた完全一致（アグリなど、空白を削除する必要がある場合）
+    4. 部分一致（長いキーから順に検索）
+    5. 逆方向の部分一致
     """
     # Normalize the input product name
     normalized_product_name = normalize_product_name(product_name)
     original_product_name = str(product_name).strip()
+    
+    # Also create a version without spaces (for アグリ compatibility)
+    normalized_no_spaces = normalized_product_name.replace(' ', '').replace('　', '')
+    original_no_spaces = original_product_name.replace(' ', '').replace('　', '')
     
     # Also normalize all mapping keys for comparison
     normalized_mapping = {}
@@ -681,7 +686,20 @@ def get_unified_name(product_name, mapping):
             if normalized_key == normalized_product_name:
                 return value
     
-    # 4. Partial match (longer keys first) - using normalized names
+    # 4. Try exact match without spaces (for アグリ compatibility)
+    for key, value in mapping.items():
+        if value is not None:
+            normalized_key = normalize_product_name(key)
+            normalized_key_no_spaces = normalized_key.replace(' ', '').replace('　', '')
+            # Try matching normalized product name (no spaces) with normalized key (no spaces)
+            if normalized_key_no_spaces and normalized_key_no_spaces == normalized_no_spaces:
+                return value
+            # Try matching original product name (no spaces) with original key (no spaces)
+            key_no_spaces = key.replace(' ', '').replace('　', '')
+            if key_no_spaces and key_no_spaces == original_no_spaces:
+                return value
+    
+    # 5. Partial match (longer keys first) - using normalized names
     sorted_keys = sorted([k for k in mapping.keys() if mapping[k] is not None], 
                         key=len, reverse=True)
     for key in sorted_keys:
@@ -690,19 +708,35 @@ def get_unified_name(product_name, mapping):
         # Check if normalized key is in normalized product name
         if normalized_key and normalized_key in normalized_product_name:
             return value
+        # Check if normalized key (no spaces) is in normalized product name (no spaces)
+        normalized_key_no_spaces = normalized_key.replace(' ', '').replace('　', '')
+        if normalized_key_no_spaces and normalized_key_no_spaces in normalized_no_spaces:
+            return value
         # Also check original key in original product name (backward compatibility)
         if key in original_product_name:
             return value
+        # Check original key (no spaces) in original product name (no spaces)
+        key_no_spaces = key.replace(' ', '').replace('　', '')
+        if key_no_spaces and key_no_spaces in original_no_spaces:
+            return value
     
-    # 5. Reverse partial match - using normalized names
+    # 6. Reverse partial match - using normalized names
     for key, value in mapping.items():
         if value is not None:
             normalized_key = normalize_product_name(key)
             # Check if normalized product name is in normalized key
             if normalized_key and normalized_product_name in normalized_key:
                 return value
+            # Check if normalized product name (no spaces) is in normalized key (no spaces)
+            normalized_key_no_spaces = normalized_key.replace(' ', '').replace('　', '')
+            if normalized_key_no_spaces and normalized_no_spaces in normalized_key_no_spaces:
+                return value
             # Also check original product name in original key (backward compatibility)
             if original_product_name in key:
+                return value
+            # Check original product name (no spaces) in original key (no spaces)
+            key_no_spaces = key.replace(' ', '').replace('　', '')
+            if key_no_spaces and original_no_spaces in key_no_spaces:
                 return value
     
     return None
