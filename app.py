@@ -238,10 +238,18 @@ def save_mapping(mapping):
                         check=False
                     )
                 
-                # 変更があるか確認（ステージング前）
-                # 作業ディレクトリのファイルとHEADを比較
+                # ファイルをステージング
+                add_result = subprocess.run(
+                    ['git', 'add', mapping_file],
+                    capture_output=True,
+                    text=True,
+                    cwd=current_dir,
+                    check=False
+                )
+                
+                # ステージングエリアとHEADを比較して変更があるか確認
                 diff_result = subprocess.run(
-                    ['git', 'diff', '--quiet', 'HEAD', '--', mapping_file],
+                    ['git', 'diff', '--cached', '--quiet', 'HEAD', '--', mapping_file],
                     capture_output=True,
                     text=True,
                     cwd=current_dir
@@ -249,16 +257,6 @@ def save_mapping(mapping):
                 
                 # 戻り値が0の場合は変更なし、0以外の場合は変更あり
                 has_changes = diff_result.returncode != 0
-                
-                # ファイルをステージング（変更がある場合のみ）
-                if has_changes:
-                    add_result = subprocess.run(
-                        ['git', 'add', mapping_file],
-                        capture_output=True,
-                        text=True,
-                        cwd=current_dir,
-                        check=False
-                    )
                 
                 # 変更がある場合のみコミット
                 if has_changes:
