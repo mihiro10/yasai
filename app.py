@@ -1058,11 +1058,34 @@ def extract_aguri_products(df, week, mapping):
                     col_map[col_name] = idx
     
     # Find column indices dynamically
+    # For アグリ, the header is "商　品　名" (with spaces between characters)
     product_name_idx = None
+    
+    # First, try to find "商　品　名" exactly (with spaces) - this is the specific format for アグリ
     for col_name, idx in col_map.items():
-        if '商品' in col_name or '品名' in col_name:
+        # Check if it matches "商　品　名" (with full-width spaces)
+        if col_name == '商　品　名' or col_name.replace(' ', '').replace('　', '') == '商品名':
             product_name_idx = idx
             break
+    
+    # If not found, try matching after normalizing spaces
+    if product_name_idx is None:
+        for col_name, idx in col_map.items():
+            # Remove all spaces (both full-width and regular) and check
+            col_name_no_spaces = col_name.replace(' ', '').replace('　', '')
+            if col_name_no_spaces == '商品名' or ('商品名' in col_name_no_spaces and '番号' not in col_name_no_spaces):
+                product_name_idx = idx
+                break
+    
+    # If still not found, try any column with "商品" or "品名" (excluding code columns)
+    if product_name_idx is None:
+        for col_name, idx in col_map.items():
+            col_name_no_spaces = col_name.replace(' ', '').replace('　', '')
+            if ('商品' in col_name_no_spaces or '品名' in col_name_no_spaces) and '番号' not in col_name_no_spaces and 'コード' not in col_name_no_spaces.lower():
+                product_name_idx = idx
+                break
+    
+    # Fallback: use column 2 (original behavior)
     if product_name_idx is None:
         product_name_idx = 2  # Fallback
     
