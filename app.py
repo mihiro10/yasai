@@ -238,7 +238,7 @@ def save_mapping(mapping):
                         check=False
                     )
                 
-                # ファイルをステージング
+                # ファイルをステージング（常に実行）
                 add_result = subprocess.run(
                     ['git', 'add', mapping_file],
                     capture_output=True,
@@ -247,16 +247,17 @@ def save_mapping(mapping):
                     check=False
                 )
                 
-                # 変更があるか確認
-                status_result = subprocess.run(
-                    ['git', 'diff', '--cached', '--quiet', mapping_file],
+                # 変更があるか確認（HEADと比較）
+                # HEADとステージングエリアの差分を確認
+                diff_result = subprocess.run(
+                    ['git', 'diff', '--cached', '--quiet', 'HEAD', '--', mapping_file],
                     capture_output=True,
                     text=True,
                     cwd=current_dir
                 )
                 
-                # 変更がある場合のみコミット
-                if status_result.returncode != 0:
+                # 戻り値が0の場合は変更なし、0以外の場合は変更あり
+                has_changes = diff_result.returncode != 0
                     # コミット
                     commit_result = subprocess.run(
                         ['git', 'commit', '-m', f'Update product mapping: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'],
@@ -266,6 +267,38 @@ def save_mapping(mapping):
                     )
                     
                     if commit_result.returncode == 0:
+                        # プッシュ（認証トークンを使用）
+                        # Streamlit secretsからGitHubトークンを取得
+                        github_token = None
+                        try:
+                            if hasattr(st, 'secrets') and 'GITHUB_TOKEN' in st.secrets:
+                                github_token = st.secrets['GITHUB_TOKEN']
+                        except:
+                            pass
+                        
+                        # リモートURLを取得
+                        remote_url_result = subprocess.run(
+                            ['git', 'config', '--get', 'remote.origin.url'],
+                            capture_output=True,
+                            text=True,
+                            cwd=current_dir
+                        )
+                        
+                        if remote_url_result.returncode == 0 and github_token:
+                            # HTTPS URLにトークンを埋め込む
+                            remote_url = remote_url_result.stdout.strip()
+                            if remote_url.startswith('https://'):
+                                # https://github.com/user/repo.git -> https://token@github.com/user/repo.git
+                                if '@' not in remote_url:
+                                    remote_url = remote_url.replace('https://', f'https://{github_token}@')
+                                    subprocess.run(
+                                        ['git', 'remote', 'set-url', 'origin', remote_url],
+                                        capture_output=True,
+                                        text=True,
+                                        cwd=current_dir,
+                                        check=False
+                                    )
+                        
                         # プッシュ
                         push_result = subprocess.run(
                             ['git', 'push', 'origin', 'main'],
