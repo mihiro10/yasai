@@ -263,7 +263,24 @@ def save_mapping(mapping):
                     check=False
                 )
                 
-                # ステージングエリアとHEADを比較して変更があるか確認
+                # HEADからファイルを読み込んで比較（リポジトリ内のバージョンと比較）
+                head_content = None
+                try:
+                    show_result = subprocess.run(
+                        ['git', 'show', f'HEAD:{mapping_file}'],
+                        capture_output=True,
+                        text=True,
+                        cwd=current_dir
+                    )
+                    if show_result.returncode == 0:
+                        head_content = show_result.stdout
+                except:
+                    pass
+                
+                # HEADの内容と新しい内容を比較
+                different_from_head = (head_content != new_content) if head_content is not None else content_changed
+                
+                # ステージングエリアとHEADを比較して変更があるか確認（補助的な確認）
                 diff_result = subprocess.run(
                     ['git', 'diff', '--cached', '--quiet', 'HEAD', '--', mapping_file],
                     capture_output=True,
@@ -274,8 +291,8 @@ def save_mapping(mapping):
                 # 戻り値が0の場合は変更なし、0以外の場合は変更あり
                 git_has_changes = diff_result.returncode != 0
                 
-                # ファイル内容が変更されたか、またはgitが変更を検出した場合にコミット
-                has_changes = content_changed or git_has_changes
+                # ファイル内容がHEADと異なるか、またはgitが変更を検出した場合にコミット
+                has_changes = different_from_head or git_has_changes
                 
                 # 変更がある場合のみコミット
                 if has_changes:
