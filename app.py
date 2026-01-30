@@ -277,14 +277,15 @@ def save_mapping(mapping):
                         if push_result.returncode == 0:
                             git_status = "✓ GitHubに正常にプッシュされました（永続化されました）"
                         else:
-                            error_msg = push_result.stderr.strip() or push_result.stdout.strip() or 'Unknown error'
-                            # Special message for authentication errors
+                            error_msg = push_result.stderr.strip() or push_result.stdout.strip() or '不明なエラー'
+                            # 認証エラーの場合の特別なメッセージ
                             if 'Username' in error_msg or 'authentication' in error_msg.lower() or 'could not read' in error_msg.lower():
-                                git_status = "⚠️ Commit succeeded but push failed (authentication required). File is saved locally, but changes may be lost when Streamlit Cloud restarts. The file is committed locally and will be included in the repository on next deployment if you manually push, or you can download the JSON file to keep a backup."
+                                git_status = "⚠️ コミットは成功しましたが、プッシュに失敗しました（認証が必要です）。ファイルはローカルに保存されましたが、Streamlit Cloudの再起動時に失われる可能性があります。JSONファイルをダウンロードしてバックアップを取ることをお勧めします。"
                             else:
-                                git_status = f"⚠️ Commit succeeded but push failed: {error_msg}"
+                                git_status = f"⚠️ コミットは成功しましたが、プッシュに失敗しました: {error_msg}"
                     else:
-                        git_status = f"⚠️ コミットに失敗しました: {commit_result.stderr.strip() or '不明なエラー'}"
+                        error_msg = commit_result.stderr.strip() or '不明なエラー'
+                        git_status = f"⚠️ コミットに失敗しました: {error_msg}"
                 else:
                     # 変更がない場合は既に最新
                     git_status = "✓ 変更はありません（既に最新の状態です）"
@@ -487,20 +488,20 @@ with st.expander("🔧 統一品名マッピング辞書の管理", expanded=Fal
     st.success("💾 **自動保存**: マッピングを保存すると、GitHubリポジトリに自動的にコミットされ、アプリが再起動しても永続的に保持されます。")
     
     st.markdown("""
-    **📊 How to check push status:**
-    1. **In the app**: Check the blue info box that appears after saving
-    2. **On GitHub**: Check the last modified date of [`product_mapping.json`](https://github.com/mihiro10/yasai/blob/main/product_mapping.json)
-    3. **Commit history**: Check the [commit history](https://github.com/mihiro10/yasai/commits/main/product_mapping.json) for the latest commit
+    **📊 プッシュ状態の確認方法:**
+    1. **アプリ内**: 保存後に表示される青い情報ボックスで確認
+    2. **GitHub**: [リポジトリの `product_mapping.json`](https://github.com/mihiro10/yasai/blob/main/product_mapping.json) の更新日時を確認
+    3. **コミット履歴**: [リポジトリのコミット履歴](https://github.com/mihiro10/yasai/commits/main/product_mapping.json) で最新のコミットを確認
     
-    **⚠️ About push errors:**
-    When you save changes, the file is committed locally in the Streamlit Cloud environment. However, pushing to GitHub requires authentication. 
+    **⚠️ プッシュエラーについて:**
+    変更を保存すると、ファイルはStreamlit Cloud環境内でローカルにコミットされます。ただし、GitHubへのプッシュには認証が必要です。
     
-    **Why authentication is needed:** GitHub requires credentials to verify you have permission to write to the repository. Streamlit Cloud can read your repo (to deploy), but doesn't automatically have write permissions.
+    **認証が必要な理由:** GitHubはリポジトリへの書き込み権限を確認するために認証情報を要求します。Streamlit Cloudはリポジトリを読み取ることはできますが、自動的に書き込み権限を持っているわけではありません。
     
-    **Current behavior:** Your changes are saved locally and committed. They'll persist during your session. If push fails, you can:
-    - Download the JSON file as a backup
-    - The local commit will be included if you manually pull/push from your local machine
-    - Or set up GitHub authentication in Streamlit Cloud (optional)
+    **現在の動作:** 変更はローカルに保存され、コミットされます。セッション中は保持されます。プッシュが失敗した場合：
+    - JSONファイルをダウンロードしてバックアップを取ることができます
+    - ローカルマシンから手動でプル/プッシュすれば、ローカルコミットが含まれます
+    - または、Streamlit CloudでGitHub認証を設定することもできます（オプション）
     """)
     
     col1, col2 = st.columns(2)
