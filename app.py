@@ -205,6 +205,39 @@ def save_mapping(mapping):
             )
             
             if git_dir_check.returncode == 0:
+                # Gitユーザー設定を確認・設定（リポジトリローカルのみ）
+                user_name_check = subprocess.run(
+                    ['git', 'config', 'user.name'],
+                    capture_output=True,
+                    text=True,
+                    cwd=current_dir
+                )
+                if user_name_check.returncode != 0:
+                    # ユーザー名が設定されていない場合は設定
+                    subprocess.run(
+                        ['git', 'config', 'user.name', 'Yasai App'],
+                        capture_output=True,
+                        text=True,
+                        cwd=current_dir,
+                        check=False
+                    )
+                
+                user_email_check = subprocess.run(
+                    ['git', 'config', 'user.email'],
+                    capture_output=True,
+                    text=True,
+                    cwd=current_dir
+                )
+                if user_email_check.returncode != 0:
+                    # メールアドレスが設定されていない場合は設定
+                    subprocess.run(
+                        ['git', 'config', 'user.email', 'yasai-app@streamlit.cloud'],
+                        capture_output=True,
+                        text=True,
+                        cwd=current_dir,
+                        check=False
+                    )
+                
                 # ファイルをステージング
                 add_result = subprocess.run(
                     ['git', 'add', mapping_file],
