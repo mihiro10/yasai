@@ -277,7 +277,12 @@ def save_mapping(mapping):
                         if push_result.returncode == 0:
                             git_status = "✓ GitHubに正常にプッシュされました（永続化されました）"
                         else:
-                            git_status = f"⚠️ コミットは成功しましたが、プッシュに失敗しました: {push_result.stderr.strip() or '認証エラーの可能性があります'}"
+                            error_msg = push_result.stderr.strip() or push_result.stdout.strip() or '不明なエラー'
+                            # 認証エラーの場合の特別なメッセージ
+                            if 'Username' in error_msg or 'authentication' in error_msg.lower() or 'could not read' in error_msg.lower():
+                                git_status = "⚠️ コミットは成功しましたが、プッシュに失敗しました（認証が必要です）。ファイルはローカルに保存されましたが、Streamlit Cloudの再起動時に失われる可能性があります。GitHubの認証情報を設定するか、手動でプッシュしてください。"
+                            else:
+                                git_status = f"⚠️ コミットは成功しましたが、プッシュに失敗しました: {error_msg}"
                     else:
                         git_status = f"⚠️ コミットに失敗しました: {commit_result.stderr.strip() or '不明なエラー'}"
                 else:
@@ -486,6 +491,10 @@ with st.expander("🔧 統一品名マッピング辞書の管理", expanded=Fal
     1. **アプリ内**: 保存後に表示される青い情報ボックスで確認
     2. **GitHub**: [リポジトリの `product_mapping.json`](https://github.com/mihiro10/yasai/blob/main/product_mapping.json) の更新日時を確認
     3. **コミット履歴**: [リポジトリのコミット履歴](https://github.com/mihiro10/yasai/commits/main/product_mapping.json) で最新のコミットを確認
+    
+    **⚠️ プッシュエラーが発生する場合:**
+    Streamlit CloudでGit認証を設定するには、Streamlit Cloudの設定でGitHub Personal Access Tokenを追加する必要があります。
+    詳細は [Streamlit Cloud ドキュメント](https://docs.streamlit.io/streamlit-community-cloud/deploy-your-app/connect-to-git-repositories) を参照してください。
     """)
     
     col1, col2 = st.columns(2)
