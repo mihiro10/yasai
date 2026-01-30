@@ -258,6 +258,9 @@ def save_mapping(mapping):
                 
                 # 戻り値が0の場合は変更なし、0以外の場合は変更あり
                 has_changes = diff_result.returncode != 0
+                
+                # 変更がある場合のみコミット
+                if has_changes:
                     # コミット
                     commit_result = subprocess.run(
                         ['git', 'commit', '-m', f'Update product mapping: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'],
