@@ -186,9 +186,25 @@ def save_mapping(mapping):
     """
     mapping_file = st.session_state.get('mapping_file', 'product_mapping.json')
     try:
+        # 現在のファイル内容を読み込んで比較用に保存（変更検出のため）
+        old_content = None
+        if os.path.exists(mapping_file):
+            try:
+                with open(mapping_file, 'r', encoding='utf-8') as f:
+                    old_content = f.read()
+            except:
+                pass
+        
         # ファイルに保存
         with open(mapping_file, 'w', encoding='utf-8') as f:
             json.dump(mapping, f, ensure_ascii=False, indent=2)
+        
+        # 新しいファイル内容を読み込む
+        with open(mapping_file, 'r', encoding='utf-8') as f:
+            new_content = f.read()
+        
+        # ファイル内容が実際に変更されたか確認
+        content_changed = (old_content != new_content)
         
         # GitHubにコミット・プッシュ（リポジトリに永続化）
         git_status = "ローカルに保存しました（Git操作はスキップされました）"
@@ -256,7 +272,10 @@ def save_mapping(mapping):
                 )
                 
                 # 戻り値が0の場合は変更なし、0以外の場合は変更あり
-                has_changes = diff_result.returncode != 0
+                git_has_changes = diff_result.returncode != 0
+                
+                # ファイル内容が変更されたか、またはgitが変更を検出した場合にコミット
+                has_changes = content_changed or git_has_changes
                 
                 # 変更がある場合のみコミット
                 if has_changes:
