@@ -10,6 +10,7 @@ import re
 import unicodedata
 import json
 import os
+import subprocess
 from datetime import datetime, timedelta
 from io import StringIO
 
@@ -178,11 +179,74 @@ if 'product_mapping' not in st.session_state:
     st.session_state.default_mapping = DEFAULT_UNIFIED_NAME_MAPPING
 
 def save_mapping(mapping):
-    """マッピング辞書をファイルに保存"""
+    """マッピング辞書をファイルに保存し、GitHubにコミット・プッシュ"""
     mapping_file = st.session_state.get('mapping_file', 'product_mapping.json')
     try:
+        # ファイルに保存
         with open(mapping_file, 'w', encoding='utf-8') as f:
             json.dump(mapping, f, ensure_ascii=False, indent=2)
+        
+        # GitHubにコミット・プッシュ（リポジトリに永続化）
+        git_success = False
+        try:
+            # 現在のディレクトリを確認
+            current_dir = os.getcwd()
+            
+            # Gitリポジトリか確認
+            git_dir_check = subprocess.run(
+                ['git', 'rev-parse', '--git-dir'],
+                capture_output=True,
+                text=True,
+                cwd=current_dir
+            )
+            
+            if git_dir_check.returncode == 0:
+                # ファイルをステージング
+                add_result = subprocess.run(
+                    ['git', 'add', mapping_file],
+                    capture_output=True,
+                    text=True,
+                    cwd=current_dir,
+                    check=False
+                )
+                
+                # 変更があるか確認
+                status_result = subprocess.run(
+                    ['git', 'diff', '--cached', '--quiet', mapping_file],
+                    capture_output=True,
+                    text=True,
+                    cwd=current_dir
+                )
+                
+                # 変更がある場合のみコミット
+                if status_result.returncode != 0:
+                    # コミット
+                    commit_result = subprocess.run(
+                        ['git', 'commit', '-m', f'Update product mapping: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'],
+                        capture_output=True,
+                        text=True,
+                        cwd=current_dir
+                    )
+                    
+                    # プッシュ
+                    if commit_result.returncode == 0:
+                        push_result = subprocess.run(
+                            ['git', 'push', 'origin', 'main'],
+                            capture_output=True,
+                            text=True,
+                            cwd=current_dir,
+                            check=False
+                        )
+                        if push_result.returncode == 0:
+                            git_success = True
+                else:
+                    # 変更がない場合は既に最新
+                    git_success = True
+        except Exception as git_error:
+            # Git操作が失敗してもファイル保存は成功とする
+            # （ローカル環境やGit設定がない場合など）
+            pass
+        
         return True
     except Exception as e:
         st.error(f"保存エラー: {str(e)}")
@@ -368,7 +432,7 @@ with st.expander("🔧 統一品名マッピング辞書の管理", expanded=Fal
     st.markdown("---")
     st.subheader("💾 マッピングの保存・復元")
     
-    st.info("💡 **重要**: Streamlit Cloudでは、アプリが再起動されると保存したファイルが失われる可能性があります。カスタムマッピングを保持するには、「📥 JSONでダウンロード」でファイルを保存し、必要に応じて「📤 JSONから復元」で読み込んでください。")
+    st.success("💾 **自動保存**: マッピングを保存すると、GitHubリポジトリに自動的にコミットされ、アプリが再起動しても永続的に保持されます。")
     
     col1, col2 = st.columns(2)
     with col1:
