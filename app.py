@@ -620,28 +620,90 @@ with st.expander("🔧 統一品名マッピング辞書の管理", expanded=Fal
 # Supported vendors
 SUPPORTED_VENDORS = ['マルエイ', '浜松ベジタブル', 'おやさい', 'アグリ']
 
-def get_unified_name(product_name, mapping):
-    """品名から統一品名（カタカナ）を取得"""
-    product_name = str(product_name).strip()
+def normalize_product_name(product_name):
+    """品名を正規化（Unicode正規化、空白処理など）"""
+    if pd.isna(product_name):
+        return ''
     
-    # 直接マッピング（最優先）
-    if product_name in mapping:
-        unified = mapping[product_name]
+    # Convert to string and strip
+    normalized = str(product_name).strip()
+    
+    # Unicode normalization (NFC) to handle combining characters
+    normalized = unicodedata.normalize('NFC', normalized)
+    
+    # Remove various types of whitespace (but keep the string structure)
+    # Replace full-width spaces and regular spaces with single space, then strip
+    normalized = normalized.replace('　', ' ').replace('\u3000', ' ')  # Full-width space
+    normalized = ' '.join(normalized.split())  # Normalize all whitespace to single spaces
+    
+    return normalized
+
+def get_unified_name(product_name, mapping):
+    """品名から統一品名（カタカナ）を取得
+    
+    マッピングの優先順位:
+    1. 正規化後の完全一致
+    2. 正規化前の完全一致（後方互換性のため）
+    3. 部分一致（長いキーから順に検索）
+    4. 逆方向の部分一致
+    """
+    # Normalize the input product name
+    normalized_product_name = normalize_product_name(product_name)
+    original_product_name = str(product_name).strip()
+    
+    # Also normalize all mapping keys for comparison
+    normalized_mapping = {}
+    for key, value in mapping.items():
+        normalized_key = normalize_product_name(key)
+        if normalized_key:
+            # Store both original and normalized versions
+            if normalized_key not in normalized_mapping:
+                normalized_mapping[normalized_key] = []
+            normalized_mapping[normalized_key].append((key, value))
+    
+    # 1. Try exact match with normalized product name
+    if normalized_product_name in normalized_mapping:
+        # Get the first mapping value (prefer exact match)
+        for orig_key, value in normalized_mapping[normalized_product_name]:
+            if value is not None:
+                return value
+    
+    # 2. Try exact match with original product name (backward compatibility)
+    if original_product_name in mapping:
+        unified = mapping[original_product_name]
         if unified is not None:
             return unified
     
-    # 部分一致（長いキーから順に検索）
+    # 3. Try exact match with normalized product name against original keys
+    for key, value in mapping.items():
+        if value is not None:
+            normalized_key = normalize_product_name(key)
+            if normalized_key == normalized_product_name:
+                return value
+    
+    # 4. Partial match (longer keys first) - using normalized names
     sorted_keys = sorted([k for k in mapping.keys() if mapping[k] is not None], 
                         key=len, reverse=True)
     for key in sorted_keys:
         value = mapping[key]
-        if key in product_name:
+        normalized_key = normalize_product_name(key)
+        # Check if normalized key is in normalized product name
+        if normalized_key and normalized_key in normalized_product_name:
+            return value
+        # Also check original key in original product name (backward compatibility)
+        if key in original_product_name:
             return value
     
-    # 逆方向の部分一致
+    # 5. Reverse partial match - using normalized names
     for key, value in mapping.items():
-        if value is not None and product_name in key:
-            return value
+        if value is not None:
+            normalized_key = normalize_product_name(key)
+            # Check if normalized product name is in normalized key
+            if normalized_key and normalized_product_name in normalized_key:
+                return value
+            # Also check original product name in original key (backward compatibility)
+            if original_product_name in key:
+                return value
     
     return None
 
@@ -805,7 +867,8 @@ def extract_maruei_products(df, week, mapping):
     for i in range(header_row + 2, len(df)):
         row = df.iloc[i]
         if len(row) > product_name_idx and pd.notna(row.iloc[product_name_idx]):
-            product_name = str(row.iloc[product_name_idx]).strip()
+            # Normalize product name (handles whitespace, Unicode normalization)
+            product_name = normalize_product_name(row.iloc[product_name_idx])
             if not product_name or product_name == '' or product_name == 'nan':
                 continue
             
@@ -897,7 +960,8 @@ def extract_hamamatsu_products(df, week, mapping):
     for i in range(header_row + 1, len(df)):
         row = df.iloc[i]
         if len(row) > product_name_idx and pd.notna(row.iloc[product_name_idx]):
-            product_name = str(row.iloc[product_name_idx]).strip()
+            # Normalize product name (handles whitespace, Unicode normalization)
+            product_name = normalize_product_name(row.iloc[product_name_idx])
             if not product_name or product_name == '' or product_name == 'nan':
                 continue
             if 'TEL' in product_name or 'FAX' in product_name:
@@ -991,7 +1055,8 @@ def extract_aguri_products(df, week, mapping):
         if len(df.columns) > product_name_idx:
             product_name = str(df.iloc[i, product_name_idx])
             if pd.notna(product_name):
-                product_name = product_name.replace('　', '').replace(' ', '').strip()
+                # Normalize product name (handles whitespace, Unicode normalization)
+                product_name = normalize_product_name(product_name)
                 if product_name and product_name != 'nan' and '商品' not in product_name:
                     origin = str(df.iloc[i, origin_idx]).strip() if len(df.columns) > origin_idx and pd.notna(df.iloc[i, origin_idx]) else ''
                     kg_price = None
@@ -1084,7 +1149,8 @@ def extract_oyasai_products(df, week, mapping):
     for i in range(header_row + 1, len(df)):
         row = df.iloc[i]
         if len(row) > product_name_idx and pd.notna(row.iloc[product_name_idx]):
-            product_name = str(row.iloc[product_name_idx]).strip()
+            # Normalize product name (handles whitespace, Unicode normalization)
+            product_name = normalize_product_name(row.iloc[product_name_idx])
             if not product_name or product_name == '' or product_name == 'nan':
                 continue
             # Skip footer rows
