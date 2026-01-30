@@ -448,6 +448,13 @@ with st.expander("🔧 統一品名マッピング辞書の管理", expanded=Fal
     
     st.success("💾 **自動保存**: マッピングを保存すると、GitHubリポジトリに自動的にコミットされ、アプリが再起動しても永続的に保持されます。")
     
+    st.markdown("""
+    **📊 プッシュ状態の確認方法:**
+    1. **アプリ内**: 保存後に表示される青い情報ボックスで確認
+    2. **GitHub**: [リポジトリの `product_mapping.json`](https://github.com/mihiro10/yasai/blob/main/product_mapping.json) の更新日時を確認
+    3. **コミット履歴**: [リポジトリのコミット履歴](https://github.com/mihiro10/yasai/commits/main/product_mapping.json) で最新のコミットを確認
+    """)
+    
     col1, col2 = st.columns(2)
     with col1:
         if st.button("💾 変更を保存", type="primary"):
