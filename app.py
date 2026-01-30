@@ -1053,10 +1053,10 @@ def extract_aguri_products(df, week, mapping):
     
     for i in range(start_row, len(df)):
         if len(df.columns) > product_name_idx:
-            product_name = str(df.iloc[i, product_name_idx])
-            if pd.notna(product_name):
+            product_name_raw = df.iloc[i, product_name_idx]
+            if pd.notna(product_name_raw):
                 # Normalize product name (handles whitespace, Unicode normalization)
-                product_name = normalize_product_name(product_name)
+                product_name = normalize_product_name(product_name_raw)
                 if product_name and product_name != 'nan' and '商品' not in product_name:
                     origin = str(df.iloc[i, origin_idx]).strip() if len(df.columns) > origin_idx and pd.notna(df.iloc[i, origin_idx]) else ''
                     kg_price = None
