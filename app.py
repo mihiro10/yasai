@@ -773,22 +773,45 @@ def extract_maruei_products(df, week, mapping):
     if header_row is None:
         return [], []
     
+    # Build column name to index mapping from header row
+    header_row_data = df.iloc[header_row]
+    col_map = {}
+    for idx, val in enumerate(header_row_data):
+        if pd.notna(val):
+            col_name = str(val).strip()
+            if col_name:
+                col_map[col_name] = idx
+    
+    # Find column indices dynamically
+    product_name_idx = col_map.get('品名', 1)  # Fallback to 1 if not found
+    origin_idx = col_map.get('産地', 2)  # Fallback to 2 if not found
+    
+    # Find price columns - look for columns containing price-related keywords
+    price_indices = []
+    for col_name, idx in col_map.items():
+        if any(keyword in col_name for keyword in ['単価', '価格', 'kg', 'KG', '円']):
+            price_indices.append(idx)
+    
+    # If no price columns found dynamically, use fallback indices
+    if not price_indices:
+        price_indices = [12, 13, 14]
+    
     products = []
     price_errors = []
     supplier = 'マルエイ'
     
     for i in range(header_row + 2, len(df)):
         row = df.iloc[i]
-        if len(row) > 1 and pd.notna(row.iloc[1]):
-            product_name = str(row.iloc[1]).strip()
+        if len(row) > product_name_idx and pd.notna(row.iloc[product_name_idx]):
+            product_name = str(row.iloc[product_name_idx]).strip()
             if not product_name or product_name == '' or product_name == 'nan':
                 continue
             
-            origin = str(row.iloc[2]).strip() if len(row) > 2 and pd.notna(row.iloc[2]) else ''
+            origin = str(row.iloc[origin_idx]).strip() if len(row) > origin_idx and pd.notna(row.iloc[origin_idx]) else ''
             kg_price = None
             price_error = None
             
-            for col_idx in [12, 13, 14]:
+            for col_idx in price_indices:
                 if len(row) > col_idx and pd.notna(row.iloc[col_idx]):
                     price_val = row.iloc[col_idx]
                     kg_price, price_error = parse_kg_price(price_val)
@@ -831,25 +854,49 @@ def extract_hamamatsu_products(df, week, mapping):
     if header_row is None:
         return [], []
     
+    # Build column name to index mapping from header row
+    header_row_data = df.iloc[header_row]
+    col_map = {}
+    for idx, val in enumerate(header_row_data):
+        if pd.notna(val):
+            col_name = str(val).strip()
+            if col_name:
+                col_map[col_name] = idx
+    
+    # Find column indices dynamically
+    product_name_idx = col_map.get('商品名', 0)  # Fallback to 0 if not found
+    origin_idx = col_map.get('産地', 1)  # Fallback to 1 if not found
+    
+    # Find price column - look for columns containing price-related keywords
+    price_idx = None
+    for col_name, idx in col_map.items():
+        if any(keyword in col_name for keyword in ['単価', '価格', 'kg', 'KG', '円']):
+            price_idx = idx
+            break
+    
+    # If no price column found dynamically, use fallback index
+    if price_idx is None:
+        price_idx = 6
+    
     products = []
     price_errors = []
     supplier = '浜松ベジタブル'
     
     for i in range(header_row + 1, len(df)):
         row = df.iloc[i]
-        if pd.notna(row.iloc[0]):
-            product_name = str(row.iloc[0]).strip()
+        if len(row) > product_name_idx and pd.notna(row.iloc[product_name_idx]):
+            product_name = str(row.iloc[product_name_idx]).strip()
             if not product_name or product_name == '' or product_name == 'nan':
                 continue
             if 'TEL' in product_name or 'FAX' in product_name:
                 continue
             
-            origin = str(row.iloc[1]).strip() if pd.notna(row.iloc[1]) else ''
+            origin = str(row.iloc[origin_idx]).strip() if len(row) > origin_idx and pd.notna(row.iloc[origin_idx]) else ''
             kg_price = None
             price_error = None
             
-            if len(row) > 6 and pd.notna(row.iloc[6]):
-                kg_price, price_error = parse_kg_price(row.iloc[6])
+            if len(row) > price_idx and pd.notna(row.iloc[price_idx]):
+                kg_price, price_error = parse_kg_price(row.iloc[price_idx])
             
             if kg_price is not None:
                 unified_name = get_unified_name(product_name, mapping)
@@ -873,22 +920,63 @@ def extract_hamamatsu_products(df, week, mapping):
 
 def extract_aguri_products(df, week, mapping):
     """Extract products from アグリ"""
+    # For アグリ, try to find header row (usually around row 2 or 3)
+    header_row = None
+    for i in range(min(5, len(df))):
+        row_str = ' '.join([str(x) for x in df.iloc[i].values if pd.notna(x)])
+        if '商品' in row_str or '品名' in row_str:
+            header_row = i
+            break
+    
+    # Build column name to index mapping from header row if found
+    col_map = {}
+    if header_row is not None:
+        header_row_data = df.iloc[header_row]
+        for idx, val in enumerate(header_row_data):
+            if pd.notna(val):
+                col_name = str(val).strip()
+                if col_name:
+                    col_map[col_name] = idx
+    
+    # Find column indices dynamically
+    product_name_idx = None
+    for col_name, idx in col_map.items():
+        if '商品' in col_name or '品名' in col_name:
+            product_name_idx = idx
+            break
+    if product_name_idx is None:
+        product_name_idx = 2  # Fallback
+    
+    origin_idx = col_map.get('産地', 3)  # Fallback to 3 if not found
+    
+    # Find price column
+    price_idx = None
+    for col_name, idx in col_map.items():
+        if any(keyword in col_name for keyword in ['単価', '価格', 'kg', 'KG', '円']):
+            price_idx = idx
+            break
+    if price_idx is None:
+        price_idx = 6  # Fallback
+    
     products = []
     price_errors = []
     supplier = 'アグリ'
     
-    for i in range(3, len(df)):
-        if len(df.columns) > 2:
-            product_name = str(df.iloc[i, 2])
+    # Start from row after header, or row 3 if no header found
+    start_row = header_row + 1 if header_row is not None else 3
+    
+    for i in range(start_row, len(df)):
+        if len(df.columns) > product_name_idx:
+            product_name = str(df.iloc[i, product_name_idx])
             if pd.notna(product_name):
                 product_name = product_name.replace('　', '').replace(' ', '').strip()
                 if product_name and product_name != 'nan' and '商品' not in product_name:
-                    origin = str(df.iloc[i, 3]).strip() if len(df.columns) > 3 and pd.notna(df.iloc[i, 3]) else ''
+                    origin = str(df.iloc[i, origin_idx]).strip() if len(df.columns) > origin_idx and pd.notna(df.iloc[i, origin_idx]) else ''
                     kg_price = None
                     price_error = None
                     
-                    if len(df.columns) > 6 and pd.notna(df.iloc[i, 6]):
-                        kg_price, price_error = parse_kg_price(df.iloc[i, 6])
+                    if len(df.columns) > price_idx and pd.notna(df.iloc[i, price_idx]):
+                        kg_price, price_error = parse_kg_price(df.iloc[i, price_idx])
                     
                     if kg_price is not None:
                         unified_name = get_unified_name(product_name, mapping)
@@ -922,30 +1010,61 @@ def extract_oyasai_products(df, week, mapping):
     if header_row is None:
         return [], []
     
+    # Build column name to index mapping from header row
+    header_row_data = df.iloc[header_row]
+    col_map = {}
+    for idx, val in enumerate(header_row_data):
+        if pd.notna(val):
+            col_name = str(val).strip()
+            if col_name:
+                col_map[col_name] = idx
+    
+    # Find column indices dynamically
+    product_name_idx = None
+    for col_name, idx in col_map.items():
+        if '商品番号・商品名' in col_name or '商品名' in col_name:
+            product_name_idx = idx
+            break
+    if product_name_idx is None:
+        product_name_idx = 1  # Fallback
+    
+    origin_idx = col_map.get('産地', 5)  # Fallback to 5 if not found
+    
+    # Find price column - look for '単価kg' or similar
+    price_idx = None
+    for col_name, idx in col_map.items():
+        if '単価kg' in col_name or ('単価' in col_name and 'kg' in col_name.lower()):
+            price_idx = idx
+            break
+    # If not found, look for any price-related column
+    if price_idx is None:
+        for col_name, idx in col_map.items():
+            if any(keyword in col_name for keyword in ['単価', '価格', 'kg', 'KG', '円']):
+                price_idx = idx
+                break
+    if price_idx is None:
+        price_idx = 11  # Fallback
+    
     products = []
     price_errors = []
     supplier = 'おやさい'
     
-    # Column indices based on the header:
-    # 相場,商品番号・商品名,,,,産地,時期,規格,荷姿,単位,ロット/週,単価kg,1c/s 着価格
-    # 0    1               5      6    7    8    9    10   11     12
     for i in range(header_row + 1, len(df)):
         row = df.iloc[i]
-        if len(row) > 1 and pd.notna(row.iloc[1]):
-            product_name = str(row.iloc[1]).strip()
+        if len(row) > product_name_idx and pd.notna(row.iloc[product_name_idx]):
+            product_name = str(row.iloc[product_name_idx]).strip()
             if not product_name or product_name == '' or product_name == 'nan':
                 continue
             # Skip footer rows
             if '※' in product_name or 'お見積り' in product_name or '税別' in product_name:
                 continue
             
-            origin = str(row.iloc[5]).strip() if len(row) > 5 and pd.notna(row.iloc[5]) else ''
+            origin = str(row.iloc[origin_idx]).strip() if len(row) > origin_idx and pd.notna(row.iloc[origin_idx]) else ''
             kg_price = None
             price_error = None
             
-            # 単価kg is in column 11 (index 11)
-            if len(row) > 11 and pd.notna(row.iloc[11]):
-                kg_price, price_error = parse_kg_price(row.iloc[11])
+            if len(row) > price_idx and pd.notna(row.iloc[price_idx]):
+                kg_price, price_error = parse_kg_price(row.iloc[price_idx])
             
             if kg_price is not None:
                 unified_name = get_unified_name(product_name, mapping)
