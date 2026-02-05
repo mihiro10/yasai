@@ -975,14 +975,26 @@ def extract_hamamatsu_products(df, week, mapping):
     product_name_idx = col_map.get('商品名', 0)  # Fallback to 0 if not found
     origin_idx = col_map.get('産地', 1)  # Fallback to 1 if not found
     
-    # Find price column - look for columns containing price-related keywords
+    # Find price column - prioritize 'kg単価' over '単価（税別）'
     price_idx = None
+    # First, look for columns that contain both 'kg' and '単価' (like 'kg単価')
     for col_name, idx in col_map.items():
-        if any(keyword in col_name for keyword in ['単価', '価格', 'kg', 'KG', '円']):
+        col_name_lower = col_name.lower()
+        if ('kg' in col_name_lower or 'ｋｇ' in col_name) and '単価' in col_name:
             price_idx = idx
             break
     
-    # If no price column found dynamically, use fallback index
+    # If not found, look for other price-related keywords (but skip '単価' alone to avoid matching '単価（税別）')
+    if price_idx is None:
+        for col_name, idx in col_map.items():
+            # Skip columns that only have '単価' without 'kg' (to avoid matching '単価（税別）')
+            if '単価' in col_name and ('kg' not in col_name.lower() and 'ｋｇ' not in col_name):
+                continue
+            if any(keyword in col_name for keyword in ['価格', 'kg', 'KG', '円']):
+                price_idx = idx
+                break
+    
+    # If still not found, use fallback index
     if price_idx is None:
         price_idx = 6
     
