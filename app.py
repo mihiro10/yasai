@@ -879,14 +879,47 @@ def extract_maruei_products(df, week, mapping):
             if col_name:
                 col_map[col_name] = idx
     
+    # Check the next row (header_row + 1) for additional column names (like "Ｋ単価")
+    # This is common in マルエイ files where headers span two rows
+    # We need to merge column information from both rows
+    if header_row + 1 < len(df):
+        next_row_data = df.iloc[header_row + 1]
+        # First, find existing mappings for each index
+        index_to_name = {}
+        for name, mapped_idx in col_map.items():
+            if mapped_idx not in index_to_name:
+                index_to_name[mapped_idx] = []
+            index_to_name[mapped_idx].append(name)
+        
+        for idx, val in enumerate(next_row_data):
+            if pd.notna(val):
+                col_name = str(val).strip()
+                if col_name:
+                    # If it's a price-related column, prioritize the name from the second row
+                    is_price_column = any(keyword in col_name for keyword in ['単価', '価格', 'kg', 'KG', '円', 'Ｋ'])
+                    if is_price_column:
+                        # Remove old mapping(s) for this index if they exist
+                        if idx in index_to_name:
+                            for old_name in index_to_name[idx]:
+                                if old_name in col_map:
+                                    del col_map[old_name]
+                        col_map[col_name] = idx
+                        index_to_name[idx] = [col_name]
+                    elif idx not in index_to_name:
+                        # If no existing mapping for this index, add it
+                        col_map[col_name] = idx
+                        index_to_name[idx] = [col_name]
+    
     # Find column indices dynamically
     product_name_idx = col_map.get('品名', 1)  # Fallback to 1 if not found
     origin_idx = col_map.get('産地', 2)  # Fallback to 2 if not found
     
     # Find price columns - look for columns containing price-related keywords
+    # Handle both "Ｋ単価" (full-width K) and regular "単価"
     price_indices = []
     for col_name, idx in col_map.items():
-        if any(keyword in col_name for keyword in ['単価', '価格', 'kg', 'KG', '円']):
+        # Check for various price-related keywords, including full-width K (Ｋ)
+        if any(keyword in col_name for keyword in ['単価', '価格', 'kg', 'KG', '円', 'Ｋ']):
             price_indices.append(idx)
     
     # If no price columns found dynamically, use fallback indices
