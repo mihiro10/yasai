@@ -638,6 +638,17 @@ def normalize_product_name(product_name):
     
     return normalized
 
+def strip_leading_product_code(product_name):
+    """先頭の商品番号・行番号（例: 1234, 1234.）を除去（アグリ向け）"""
+    if pd.isna(product_name):
+        return ''
+    s = normalize_product_name(product_name)
+    if not s:
+        return s
+    # "1234 キャベツ" / "1234.キャベツ" / "1234" のような先頭数字を除去
+    stripped = re.sub(r'^\d+[\s\.\-・、,]*', '', s)
+    return stripped.strip()
+
 def get_unified_name(product_name, mapping):
     """品名から統一品名（カタカナ）を取得
     
@@ -651,10 +662,12 @@ def get_unified_name(product_name, mapping):
     # Normalize the input product name
     normalized_product_name = normalize_product_name(product_name)
     original_product_name = str(product_name).strip()
+    stripped_product_name = strip_leading_product_code(product_name)
     
     # Also create a version without spaces (for アグリ compatibility)
     normalized_no_spaces = normalized_product_name.replace(' ', '').replace('　', '')
     original_no_spaces = original_product_name.replace(' ', '').replace('　', '')
+    stripped_no_spaces = stripped_product_name.replace(' ', '').replace('　', '')
     
     # Also normalize all mapping keys for comparison
     normalized_mapping = {}
@@ -666,38 +679,49 @@ def get_unified_name(product_name, mapping):
                 normalized_mapping[normalized_key] = []
             normalized_mapping[normalized_key].append((key, value))
     
-    # 1. Try exact match with normalized product name
-    if normalized_product_name in normalized_mapping:
-        # Get the first mapping value (prefer exact match)
-        for orig_key, value in normalized_mapping[normalized_product_name]:
-            if value is not None:
-                return value
+    def _try_exact_variants(names):
+        for name in names:
+            if not name:
+                continue
+            if name in normalized_mapping:
+                for orig_key, value in normalized_mapping[name]:
+                    if value is not None:
+                        return value
+            if name in mapping and mapping[name] is not None:
+                return mapping[name]
+            for key, value in mapping.items():
+                if value is not None and normalize_product_name(key) == name:
+                    return value
+            name_no_spaces = name.replace(' ', '').replace('　', '')
+            for key, value in mapping.items():
+                if value is not None:
+                    normalized_key = normalize_product_name(key)
+                    if normalized_key.replace(' ', '').replace('　', '') == name_no_spaces:
+                        return value
+                    key_no_spaces = key.replace(' ', '').replace('　', '')
+                    if key_no_spaces == name_no_spaces:
+                        return value
+        return None
+
+    # 0–4. Exact match (先頭番号除去後の品名も試す)
+    exact_hit = _try_exact_variants([
+        normalized_product_name,
+        stripped_product_name,
+        original_product_name,
+    ])
+    if exact_hit is not None:
+        return exact_hit
     
-    # 2. Try exact match with original product name (backward compatibility)
-    if original_product_name in mapping:
-        unified = mapping[original_product_name]
-        if unified is not None:
-            return unified
-    
-    # 3. Try exact match with normalized product name against original keys
-    for key, value in mapping.items():
-        if value is not None:
-            normalized_key = normalize_product_name(key)
-            if normalized_key == normalized_product_name:
-                return value
-    
-    # 4. Try exact match without spaces (for アグリ compatibility)
-    for key, value in mapping.items():
-        if value is not None:
-            normalized_key = normalize_product_name(key)
-            normalized_key_no_spaces = normalized_key.replace(' ', '').replace('　', '')
-            # Try matching normalized product name (no spaces) with normalized key (no spaces)
-            if normalized_key_no_spaces and normalized_key_no_spaces == normalized_no_spaces:
-                return value
-            # Try matching original product name (no spaces) with original key (no spaces)
-            key_no_spaces = key.replace(' ', '').replace('　', '')
-            if key_no_spaces and key_no_spaces == original_no_spaces:
-                return value
+    name_variants = [
+        normalized_product_name,
+        stripped_product_name,
+        original_product_name,
+    ]
+    no_space_variants = [
+        normalized_no_spaces,
+        stripped_no_spaces,
+        original_no_spaces,
+    ]
     
     # 5. Partial match (longer keys first) - using normalized names
     sorted_keys = sorted([k for k in mapping.keys() if mapping[k] is not None], 
@@ -705,39 +729,35 @@ def get_unified_name(product_name, mapping):
     for key in sorted_keys:
         value = mapping[key]
         normalized_key = normalize_product_name(key)
-        # Check if normalized key is in normalized product name
-        if normalized_key and normalized_key in normalized_product_name:
-            return value
-        # Check if normalized key (no spaces) is in normalized product name (no spaces)
         normalized_key_no_spaces = normalized_key.replace(' ', '').replace('　', '')
-        if normalized_key_no_spaces and normalized_key_no_spaces in normalized_no_spaces:
-            return value
-        # Also check original key in original product name (backward compatibility)
-        if key in original_product_name:
-            return value
-        # Check original key (no spaces) in original product name (no spaces)
         key_no_spaces = key.replace(' ', '').replace('　', '')
-        if key_no_spaces and key_no_spaces in original_no_spaces:
-            return value
+        for name in name_variants:
+            if normalized_key and name and normalized_key in name:
+                return value
+            if key and name and key in name:
+                return value
+        for name_ns in no_space_variants:
+            if normalized_key_no_spaces and name_ns and normalized_key_no_spaces in name_ns:
+                return value
+            if key_no_spaces and name_ns and key_no_spaces in name_ns:
+                return value
     
     # 6. Reverse partial match - using normalized names
     for key, value in mapping.items():
         if value is not None:
             normalized_key = normalize_product_name(key)
-            # Check if normalized product name is in normalized key
-            if normalized_key and normalized_product_name in normalized_key:
-                return value
-            # Check if normalized product name (no spaces) is in normalized key (no spaces)
             normalized_key_no_spaces = normalized_key.replace(' ', '').replace('　', '')
-            if normalized_key_no_spaces and normalized_no_spaces in normalized_key_no_spaces:
-                return value
-            # Also check original product name in original key (backward compatibility)
-            if original_product_name in key:
-                return value
-            # Check original product name (no spaces) in original key (no spaces)
             key_no_spaces = key.replace(' ', '').replace('　', '')
-            if key_no_spaces and original_no_spaces in key_no_spaces:
-                return value
+            for name in name_variants:
+                if normalized_key and name and name in normalized_key:
+                    return value
+                if name and key and name in key:
+                    return value
+            for name_ns in no_space_variants:
+                if normalized_key_no_spaces and name_ns and name_ns in normalized_key_no_spaces:
+                    return value
+                if key_no_spaces and name_ns and name_ns in key_no_spaces:
+                    return value
     
     return None
 
@@ -1082,13 +1102,217 @@ def extract_hamamatsu_products(df, week, mapping):
     
     return products, price_errors, mapping_errors
 
+def _aguri_header_no_spaces(name):
+    return str(name).strip().replace(' ', '').replace('　', '')
+
+def _aguri_column_header_text(col_idx, col_map):
+    for col_name, mapped_idx in col_map.items():
+        if mapped_idx == col_idx:
+            return col_name
+    return ''
+
+def _aguri_is_data_column_by_header(col_idx, col_map):
+    """品名・産地・単価など、行番号列ではないことがヘッダーから分かる列"""
+    header = _aguri_column_header_text(col_idx, col_map)
+    if not header:
+        return False
+    header_ns = _aguri_header_no_spaces(header)
+    if any(kw in header for kw in ['単価', '価格', 'kg', 'KG', '円', 'Ｋ']):
+        return True
+    if '産地' in header or header_ns == '産地':
+        return True
+    if header == '商　品　名' or header_ns == '商品名':
+        return True
+    if ('商品' in header_ns or '品名' in header_ns) and '番号' not in header_ns:
+        return True
+    return False
+
+def _aguri_column_numeric_ratio(df, col_idx, start_row, sample_rows=40):
+    """列の値が行番号などの数字だけかどうか（先頭列削除の有無に依存しない判定用）"""
+    total = 0
+    numeric = 0
+    end = min(start_row + sample_rows, len(df))
+    for i in range(start_row, end):
+        if col_idx >= len(df.columns):
+            break
+        val = df.iloc[i, col_idx]
+        if pd.isna(val):
+            continue
+        s = str(val).strip()
+        if not s or s.lower() == 'nan':
+            continue
+        total += 1
+        if re.match(r'^[\d\.,]+$', s.replace(' ', '')):
+            numeric += 1
+    if total == 0:
+        return 0.0
+    return numeric / total
+
+def _aguri_is_row_number_column(col_idx, col_map, df, start_row):
+    """先頭の連番（1234, 1235…）列かどうか。単価列は除外する。"""
+    if col_idx is None:
+        return False
+    if _aguri_is_data_column_by_header(col_idx, col_map):
+        return False
+    if _aguri_column_numeric_ratio(df, col_idx, start_row) < 0.85:
+        return False
+    values = []
+    end = min(start_row + 40, len(df))
+    for i in range(start_row, end):
+        if col_idx >= len(df.columns):
+            break
+        val = df.iloc[i, col_idx]
+        if pd.isna(val):
+            continue
+        s = str(val).strip()
+        if re.match(r'^[\d\.,]+$', s.replace(' ', '')):
+            try:
+                values.append(float(s.replace(',', '')))
+            except ValueError:
+                return False
+    if len(values) < 2:
+        return len(values) == 1 and values[0] < 10000
+    values_sorted = sorted(values)
+    diffs = [values_sorted[i + 1] - values_sorted[i] for i in range(len(values_sorted) - 1)]
+    # 行番号列は連番になりやすい（差が1前後）
+    if all(0 < d <= 2 for d in diffs):
+        return True
+    return False
+
+def _resolve_aguri_columns(df, header_row, col_map):
+    """アグリCSVの列位置をヘッダー名とデータ内容から解決（行番号列の有無に非依存）"""
+    start_row = header_row + 1 if header_row is not None else 3
+    product_name_idx = None
+    origin_idx = None
+    price_idx = None
+
+    for col_name, idx in col_map.items():
+        ns = _aguri_header_no_spaces(col_name)
+        if col_name == '商　品　名' or ns == '商品名':
+            product_name_idx = idx
+            break
+
+    if product_name_idx is None:
+        for col_name, idx in col_map.items():
+            ns = _aguri_header_no_spaces(col_name)
+            if ns == '商品名' or ('商品名' in ns and '番号' not in ns):
+                product_name_idx = idx
+                break
+
+    if product_name_idx is None:
+        for col_name, idx in col_map.items():
+            ns = _aguri_header_no_spaces(col_name)
+            if ('商品' in ns or '品名' in ns) and '番号' not in ns and 'コード' not in ns.lower():
+                product_name_idx = idx
+                break
+
+    for col_name, idx in col_map.items():
+        if '産地' in col_name or _aguri_header_no_spaces(col_name) == '産地':
+            origin_idx = idx
+            break
+
+    if _aguri_is_row_number_column(product_name_idx, col_map, df, start_row):
+        product_name_idx = None
+
+    price_candidates = []
+    for col_name, idx in col_map.items():
+        if any(keyword in col_name for keyword in ['単価', '価格', 'kg', 'KG', '円', 'Ｋ']):
+            if not _aguri_is_row_number_column(idx, col_map, df, start_row):
+                price_candidates.append((col_name, idx))
+    if price_candidates:
+        def _price_header_score(name):
+            name_lower = name.lower()
+            score = 0
+            if '単価' in name and ('kg' in name_lower or 'ｋｇ' in name):
+                score += 10
+            elif '単価' in name:
+                score += 5
+            elif 'kg' in name_lower or 'ｋｇ' in name:
+                score += 3
+            elif '価格' in name:
+                score += 2
+            return score
+        price_candidates.sort(key=lambda item: (_price_header_score(item[0]), item[1]), reverse=True)
+        price_idx = price_candidates[0][1]
+
+    if product_name_idx is None:
+        best_idx = None
+        best_score = -1
+        for col_idx in range(len(df.columns)):
+            if _aguri_is_row_number_column(col_idx, col_map, df, start_row):
+                continue
+            header_ns = ''
+            for cn, mapped_idx in col_map.items():
+                if mapped_idx == col_idx:
+                    header_ns = _aguri_header_no_spaces(cn)
+                    break
+            if '番号' in header_ns or 'コード' in header_ns.lower():
+                continue
+            score = 0
+            for i in range(start_row, min(start_row + 40, len(df))):
+                val = df.iloc[i, col_idx]
+                if pd.isna(val):
+                    continue
+                name = normalize_product_name(val)
+                if not name or name == 'nan' or '商品' in name:
+                    continue
+                if re.match(r'^[\d\.,]+$', name.replace(' ', '')):
+                    continue
+                if re.search(r'[\u3040-\u9fff\u30a0-\u30ff]', name):
+                    score += 1
+            if score > best_score:
+                best_score = score
+                best_idx = col_idx
+        product_name_idx = best_idx
+
+    if price_idx is None:
+        best_idx = None
+        best_score = -1
+        for col_idx in range(len(df.columns)):
+            if col_idx == product_name_idx:
+                continue
+            if _aguri_is_row_number_column(col_idx, col_map, df, start_row):
+                continue
+            score = 0
+            for i in range(start_row, min(start_row + 40, len(df))):
+                if col_idx >= len(df.columns):
+                    break
+                val = df.iloc[i, col_idx]
+                if pd.isna(val):
+                    continue
+                parsed, _ = parse_kg_price(val)
+                if parsed is not None:
+                    score += 1
+            if score > best_score:
+                best_score = score
+                best_idx = col_idx
+        price_idx = best_idx
+
+    if origin_idx is None and product_name_idx is not None:
+        candidate = product_name_idx + 1
+        if candidate < len(df.columns) and not _aguri_is_row_number_column(candidate, col_map, df, start_row):
+            origin_idx = candidate
+
+    return product_name_idx, origin_idx, price_idx, start_row
+
+def _aguri_row_has_product_header(row_values):
+    """ヘッダー行に商品名列があるか（商　品　名 など空白入り表記に対応）"""
+    for val in row_values:
+        if pd.isna(val):
+            continue
+        ns = _aguri_header_no_spaces(val)
+        if ns == '商品名' or '品名' in ns:
+            return True
+        if '商品' in ns and '番号' not in ns and 'コード' not in ns.lower():
+            return True
+    return False
+
 def extract_aguri_products(df, week, mapping):
     """Extract products from アグリ"""
     # For アグリ, try to find header row (usually around row 2 or 3)
     header_row = None
     for i in range(min(5, len(df))):
-        row_str = ' '.join([str(x) for x in df.iloc[i].values if pd.notna(x)])
-        if '商品' in row_str or '品名' in row_str:
+        if _aguri_row_has_product_header(df.iloc[i].values):
             header_row = i
             break
     
@@ -1102,69 +1326,35 @@ def extract_aguri_products(df, week, mapping):
                 if col_name:
                     col_map[col_name] = idx
     
-    # Find column indices dynamically
-    # For アグリ, the header is "商　品　名" (with spaces between characters)
-    product_name_idx = None
-    
-    # First, try to find "商　品　名" exactly (with spaces) - this is the specific format for アグリ
-    for col_name, idx in col_map.items():
-        # Check if it matches "商　品　名" (with full-width spaces)
-        if col_name == '商　品　名' or col_name.replace(' ', '').replace('　', '') == '商品名':
-            product_name_idx = idx
-            break
-    
-    # If not found, try matching after normalizing spaces
+    product_name_idx, origin_idx, price_idx, start_row = _resolve_aguri_columns(df, header_row, col_map)
     if product_name_idx is None:
-        for col_name, idx in col_map.items():
-            # Remove all spaces (both full-width and regular) and check
-            col_name_no_spaces = col_name.replace(' ', '').replace('　', '')
-            if col_name_no_spaces == '商品名' or ('商品名' in col_name_no_spaces and '番号' not in col_name_no_spaces):
-                product_name_idx = idx
-                break
-    
-    # If still not found, try any column with "商品" or "品名" (excluding code columns)
-    if product_name_idx is None:
-        for col_name, idx in col_map.items():
-            col_name_no_spaces = col_name.replace(' ', '').replace('　', '')
-            if ('商品' in col_name_no_spaces or '品名' in col_name_no_spaces) and '番号' not in col_name_no_spaces and 'コード' not in col_name_no_spaces.lower():
-                product_name_idx = idx
-                break
-    
-    # Fallback: use column 2 (original behavior)
-    if product_name_idx is None:
-        product_name_idx = 2  # Fallback
-    
-    origin_idx = col_map.get('産地', 3)  # Fallback to 3 if not found
-    
-    # Find price column
-    price_idx = None
-    for col_name, idx in col_map.items():
-        if any(keyword in col_name for keyword in ['単価', '価格', 'kg', 'KG', '円']):
-            price_idx = idx
-            break
-    if price_idx is None:
-        price_idx = 6  # Fallback
+        return [], [], []
     
     products = []
     price_errors = []
     mapping_errors = []
     supplier = 'アグリ'
     
-    # Start from row after header, or row 3 if no header found
-    start_row = header_row + 1 if header_row is not None else 3
-    
     for i in range(start_row, len(df)):
         if len(df.columns) > product_name_idx:
             product_name_raw = df.iloc[i, product_name_idx]
             if pd.notna(product_name_raw):
-                # Normalize product name (handles whitespace, Unicode normalization)
-                product_name = normalize_product_name(product_name_raw)
+                # 先頭の行番号・商品番号を除去してから正規化
+                product_name = strip_leading_product_code(product_name_raw)
+                if not product_name:
+                    product_name = normalize_product_name(product_name_raw)
+                else:
+                    product_name = normalize_product_name(product_name)
                 if product_name and product_name != 'nan' and '商品' not in product_name:
-                    origin = str(df.iloc[i, origin_idx]).strip() if len(df.columns) > origin_idx and pd.notna(df.iloc[i, origin_idx]) else ''
+                    if re.match(r'^[\d\.,]+$', product_name.replace(' ', '')):
+                        continue
+                    origin = ''
+                    if origin_idx is not None and len(df.columns) > origin_idx and pd.notna(df.iloc[i, origin_idx]):
+                        origin = str(df.iloc[i, origin_idx]).strip()
                     kg_price = None
                     price_error = None
                     
-                    if len(df.columns) > price_idx and pd.notna(df.iloc[i, price_idx]):
+                    if price_idx is not None and len(df.columns) > price_idx and pd.notna(df.iloc[i, price_idx]):
                         kg_price, price_error = parse_kg_price(df.iloc[i, price_idx])
                     
                     if kg_price is not None:
