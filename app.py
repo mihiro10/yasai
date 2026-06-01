@@ -1148,6 +1148,36 @@ def _aguri_column_numeric_ratio(df, col_idx, start_row, sample_rows=40):
         return 0.0
     return numeric / total
 
+def _aguri_numeric_values(df, col_idx, start_row, sample_rows=40):
+    """指定列から数値として解釈できる値を抽出"""
+    values = []
+    end = min(start_row + sample_rows, len(df))
+    for i in range(start_row, end):
+        if col_idx >= len(df.columns):
+            break
+        val = df.iloc[i, col_idx]
+        if pd.isna(val):
+            continue
+        s = str(val).strip()
+        if not s:
+            continue
+        if re.match(r'^[\d\.,]+$', s.replace(' ', '')):
+            try:
+                values.append(float(s.replace(',', '')))
+            except ValueError:
+                continue
+    return values
+
+def _aguri_median(values):
+    if not values:
+        return 0.0
+    sorted_vals = sorted(values)
+    n = len(sorted_vals)
+    mid = n // 2
+    if n % 2 == 1:
+        return sorted_vals[mid]
+    return (sorted_vals[mid - 1] + sorted_vals[mid]) / 2
+
 def _aguri_is_row_number_column(col_idx, col_map, df, start_row):
     """先頭の連番（1234, 1235…）列かどうか。単価列は除外する。"""
     if col_idx is None:
@@ -1156,22 +1186,19 @@ def _aguri_is_row_number_column(col_idx, col_map, df, start_row):
         return False
     if _aguri_column_numeric_ratio(df, col_idx, start_row) < 0.85:
         return False
-    values = []
-    end = min(start_row + 40, len(df))
-    for i in range(start_row, end):
-        if col_idx >= len(df.columns):
-            break
-        val = df.iloc[i, col_idx]
-        if pd.isna(val):
-            continue
-        s = str(val).strip()
-        if re.match(r'^[\d\.,]+$', s.replace(' ', '')):
-            try:
-                values.append(float(s.replace(',', '')))
-            except ValueError:
-                return False
+    values = _aguri_numeric_values(df, col_idx, start_row)
     if len(values) < 2:
         return len(values) == 1 and values[0] < 10000
+
+    int_like = sum(1 for v in values if abs(v - round(v)) < 1e-9)
+    int_ratio = int_like / len(values)
+    unique_ratio = len(set(values)) / len(values)
+    monotonic_non_decreasing = all(values[i + 1] >= values[i] for i in range(len(values) - 1))
+    range_wide = (max(values) - min(values)) >= 200
+    high_median = _aguri_median(values) >= 500
+    if int_ratio >= 0.9 and unique_ratio >= 0.8 and monotonic_non_decreasing and (range_wide or high_median):
+        return True
+
     values_sorted = sorted(values)
     diffs = [values_sorted[i + 1] - values_sorted[i] for i in range(len(values_sorted) - 1)]
     # 行番号列は連番になりやすい（差が1前後）
